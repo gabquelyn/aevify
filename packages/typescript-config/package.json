@@ -1,0 +1,8 @@
+{
+  "name": "@aevify/typescript-config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared TypeScript settings for Aevify.",
+  "license": "MIT",
+  "files": ["base.json"]
+}

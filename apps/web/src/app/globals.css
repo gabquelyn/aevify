@@ -1,0 +1,14 @@
+@import "tailwindcss";
+@import "@aevify/tailwind-config/theme.css";
+
+html {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-brand-100);
+  color: var(--color-ink);
+}

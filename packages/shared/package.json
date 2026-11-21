@@ -1,0 +1,18 @@
+{
+  "name": "@aevify/shared",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Types and constants shared across Aevify apps and packages.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@aevify/typescript-config": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}

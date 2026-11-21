@@ -1,0 +1,31 @@
+{
+  "name": "@aevify/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Aevify web app: landing page, merchant dashboard, hosted checkout and gateway API.",
+  "license": "MIT",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf .next"
+  },
+  "dependencies": {
+    "@aevify/shared": "workspace:*",
+    "geist": "^1.9.2",
+    "next": "^16.4.6",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@aevify/tailwind-config": "workspace:*",
+    "@aevify/typescript-config": "workspace:*",
+    "@tailwindcss/postcss": "^4.3.5",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "tailwindcss": "^4.3.5",
+    "typescript": "^5.9.3"
+  }
+}

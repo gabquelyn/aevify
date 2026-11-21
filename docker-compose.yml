@@ -1,0 +1,40 @@
+# Run Aevify locally:  docker compose up --build
+# The checkout contract lives on QDay Aevum Testnet, so containers only need an RPC URL (see .env.example).
+# The listener and demo store will be added here as they are built.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aevify
+      POSTGRES_PASSWORD: aevify
+      POSTGRES_DB: aevify
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aevify -d aevify"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgres://aevify:aevify@postgres:5432/aevify
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

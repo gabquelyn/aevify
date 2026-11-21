@@ -1,0 +1,10 @@
+{
+  "name": "@aevify/tailwind-config",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Aevify design tokens for Tailwind CSS v4: white, greys and light blue.",
+  "license": "MIT",
+  "exports": {
+    "./theme.css": "./theme.css"
+  }
+}

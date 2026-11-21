@@ -1,0 +1,71 @@
+/*
+ * Aevify theme for Tailwind CSS v4.
+ * Import after "tailwindcss" in each app's global stylesheet:
+ *
+ *   @import "tailwindcss";
+ *   @import "@aevify/tailwind-config/theme.css";
+ *
+ * Palette: white surfaces, slate greys for text and lines, light blue (sky) as the accent.
+ */
+
+@theme {
+  /* Fonts: apps set --font-geist-sans / --font-geist-mono via the `geist` package. */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Accent: light blue */
+  --color-brand-50: #f0f9ff;
+  --color-brand-100: #e0f2fe;
+  --color-brand-200: #bae6fd;
+  --color-brand-300: #7dd3fc;
+  --color-brand-400: #38bdf8;
+  --color-brand-500: #0ea5e9;
+  --color-brand-600: #0284c7;
+  --color-brand-700: #0369a1;
+
+  /* Surfaces and lines */
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafc; /* slate-50 */
+  --color-line: #e2e8f0; /* slate-200 */
+  --color-line-strong: #cbd5e1; /* slate-300 */
+
+  /* Text */
+  --color-ink: #0f172a; /* slate-900: headings */
+  --color-ink-muted: #64748b; /* slate-500: body, metadata */
+  --color-ink-faint: #94a3b8; /* slate-400: hints */
+
+  /* Payment status (used sparingly, mostly in the dashboard) */
+  --color-status-paid: #16a34a;
+  --color-status-pending: #d97706;
+  --color-status-expired: #94a3b8;
+  --color-status-failed: #dc2626;
+
+  --tracking-tightest: -0.045em;
+}
+
+/* Fine dot grid, like the OKX hero, in light grey. */
+@utility bg-dot-grid {
+  background-image: radial-gradient(circle at center, var(--color-line-strong) 1px, transparent 1.2px);
+  background-size: 14px 14px;
+}
+
+/* Fade an element out toward its edges (pair with bg-dot-grid). */
+@utility mask-fade-edges {
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 35%, transparent 85%);
+}
+
+/* Fade an element in from its left edge (keeps hero text readable over artwork). */
+@utility mask-fade-left {
+  mask-image: linear-gradient(to right, transparent 0%, #000 30%);
+}
+
+/*
+ * Headline gradient: grey on the left, near-black on the right.
+ * Apply to each line separately so every line gets its own sweep.
+ */
+@utility text-gradient-ink {
+  background-image: linear-gradient(90deg, var(--color-ink-faint) 0%, var(--color-ink) 62%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
