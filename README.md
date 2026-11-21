@@ -20,8 +20,8 @@ checkout contract, and merchants are notified by signed webhook.
 | MongoDB connection + `/api/health` | `apps/web/src/lib/db.ts` | ✅ |
 | Sign-in (Google + email links via Brevo) | `apps/web/src/lib/auth.ts`, `/signin` | ✅ |
 | Gateway API: payments, keys, payout wallets ([reference](./docs/API.md)) | `apps/web/src/app/api` | ✅ |
-| Merchant dashboard | `/dashboard` | Basic version ✅, full version planned |
-| Hosted checkout | `apps/web` | Planned |
+| Merchant dashboard: overview, payments, payment links, refunds, developers, settings | `/dashboard` | ✅ |
+| Hosted checkout (one-step permit or approve + pay, mobile, embeddable) | `/pay/:id` | ✅ |
 | Chain listener and webhooks | `apps/listener` | Planned |
 | `@aevify/react` and `@aevify/node` | `packages/react`, `packages/node` | Planned |
 | Demo store and agent purchase | `apps/demo-store` | Planned |

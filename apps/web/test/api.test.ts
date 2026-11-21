@@ -74,6 +74,9 @@ const paymentsRoute = await import("@/app/api/v1/payments/route");
 const paymentRoute = await import("@/app/api/v1/payments/[id]/route");
 const checkoutRoute = await import("@/app/api/v1/checkout/[id]/route");
 const healthRoute = await import("@/app/api/health/route");
+const dashboardPaymentRoute = await import("@/app/api/merchant/payments/[id]/route");
+const statsRoute = await import("@/app/api/merchant/stats/route");
+const configRoute = await import("@/app/api/v1/config/route");
 const { __fakeDb: fakeDb } = (await import("@/lib/db")) as unknown as { __fakeDb: import("./fake-db").FakeDb };
 
 // --- Helpers -----------------------------------------------------------------
@@ -467,5 +470,75 @@ describe("GET /api/v1/checkout/:id (hosted checkout and agents)", () => {
   it("returns 404 for unknown or malformed IDs", async () => {
     expect((await checkoutRoute.GET(jsonRequest("/x"), params({ id: "pay_doesnotexist000000000000" }))).status).toBe(404);
     expect((await checkoutRoute.GET(jsonRequest("/x"), params({ id: "../../etc" }))).status).toBe(404);
+  });
+});
+
+describe("dashboard payments, links and stats", () => {
+  it("creates a payment link from the dashboard session", async () => {
+    await readyMerchant();
+    const res = await json(dashboardPaymentsRoute.POST(jsonRequest("/api/merchant/payments", { body: { amount: "7.5", description: "Gift card" } })));
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ amount: "7.50", description: "Gift card", status: "created" });
+    expect(res.body.onchain.paymentId).toMatch(/^0x[0-9a-f]{64}$/);
+
+    const detail = await json(dashboardPaymentRoute.GET(jsonRequest("/x"), params({ id: res.body.id })));
+    expect(detail.body.id).toBe(res.body.id);
+  });
+
+  it("refuses payment links until a payout wallet is connected", async () => {
+    signIn();
+    await createMerchant();
+    const res = await json(dashboardPaymentsRoute.POST(jsonRequest("/x", { body: { amount: "1" } })));
+    expect(res.status).toBe(409);
+  });
+
+  it("filters by status and rejects unknown statuses", async () => {
+    const { secretKey } = await readyMerchant();
+    const a = (await createPayment(secretKey, { amount: "1" })).body;
+    await createPayment(secretKey, { amount: "2" });
+    const onchainId = a.onchain.paymentId;
+    state.payments.set(onchainId, { payer: otherWallet.address, amount: 1_000_000n, fee: 30_000n, refunded: 0n, paidAt: new Date() });
+
+    const paid = await json(dashboardPaymentsRoute.GET(jsonRequest("/api/merchant/payments?status=paid")));
+    // The list refreshes from the chain first, so the newly paid one shows up after a read.
+    await json(paymentRoute.GET(jsonRequest("/x", { headers: bearer(secretKey) }), params({ id: a.id })));
+    const paidAfter = await json(dashboardPaymentsRoute.GET(jsonRequest("/api/merchant/payments?status=paid")));
+    expect(paidAfter.body.data.map((p: { id: string }) => p.id)).toEqual([a.id]);
+    expect(paid.status).toBe(200);
+    expect((await dashboardPaymentsRoute.GET(jsonRequest("/api/merchant/payments?status=bogus"))).status).toBe(400);
+  });
+
+  it("totals volume, fees, refunds and counts", async () => {
+    const { secretKey } = await readyMerchant();
+    const p1 = (await createPayment(secretKey, { amount: "10" })).body;
+    const p2 = (await createPayment(secretKey, { amount: "5" })).body;
+    await createPayment(secretKey, { amount: "3" }); // stays unpaid
+    state.payments.set(p1.onchain.paymentId, { payer: otherWallet.address, amount: 10_000_000n, fee: 300_000n, refunded: 0n, paidAt: new Date() });
+    state.payments.set(p2.onchain.paymentId, { payer: otherWallet.address, amount: 5_000_000n, fee: 150_000n, refunded: 5_000_000n, paidAt: new Date() });
+    for (const p of [p1, p2]) await paymentRoute.GET(jsonRequest("/x", { headers: bearer(secretKey) }), params({ id: p.id }));
+
+    const stats = await json(statsRoute.GET(jsonRequest("/api/merchant/stats")));
+    expect(stats.body).toMatchObject({
+      currency: "tUSD8",
+      volume: "15.00",
+      fees: "0.45",
+      refunded: "5.00",
+      net: "9.55",
+      counts: { created: 1, paid: 1, refunded: 1, expired: 0 },
+    });
+    expect(stats.body.daily).toHaveLength(14);
+    expect(stats.body.daily.at(-1).volume).toBe("15.00");
+  });
+});
+
+describe("GET /api/v1/config", () => {
+  it("returns public chain, contract and token details", async () => {
+    const res = await json(configRoute.GET());
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      chain: { id: 44005, name: "QDay Aevum Testnet", explorerUrl: "https://explorer-test.qday.info" },
+      checkoutAddress: state.checkout,
+      token: { symbol: "tUSD8", decimals: 6 },
+    });
   });
 });

@@ -1,4 +1,5 @@
 import { MongoClient, type Db } from "mongodb";
+import { MemoryDb } from "./testing/memory-db";
 
 /**
  * MongoDB access for the web app and API. Server-side only.
@@ -18,6 +19,7 @@ export const COLLECTIONS = {
 declare global {
   // One client per process: survives hot reloads in dev and warm invocations on Vercel.
   var _aevifyMongoClient: MongoClient | undefined;
+  var _aevifyMemoryDb: MemoryDb | undefined;
 }
 
 export class DatabaseNotConfiguredError extends Error {
@@ -27,8 +29,16 @@ export class DatabaseNotConfiguredError extends Error {
   }
 }
 
+/**
+ * TEST ONLY: `AEVIFY_TEST_MODE=memory` swaps MongoDB for an in-memory store and enables a
+ * test sign-in cookie, for automated browser tests. It can never turn on in production.
+ */
+export function isMemoryTestMode(): boolean {
+  return process.env.AEVIFY_TEST_MODE === "memory" && process.env.NODE_ENV !== "production";
+}
+
 export function isDatabaseConfigured(): boolean {
-  return Boolean(process.env.MONGODB_URI?.trim());
+  return isMemoryTestMode() || Boolean(process.env.MONGODB_URI?.trim());
 }
 
 /**
@@ -47,5 +57,9 @@ export function getMongoClient(): MongoClient {
 
 /** The Aevify database. */
 export function getDb(): Db {
+  if (isMemoryTestMode()) {
+    globalThis._aevifyMemoryDb ??= new MemoryDb();
+    return globalThis._aevifyMemoryDb as unknown as Db;
+  }
   return getMongoClient().db(process.env.MONGODB_DB?.trim() || "aevify");
 }

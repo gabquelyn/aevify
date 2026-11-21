@@ -21,6 +21,7 @@ import {
 import { COLLECTIONS, getDb } from "./db";
 import { env } from "./env";
 import { newId } from "./ids";
+import { publicChainConfig } from "./public-config";
 import type { MerchantDoc } from "./merchants";
 
 // --- Types -------------------------------------------------------------------
@@ -219,13 +220,20 @@ export async function findPayment(id: string, merchantId?: string) {
   return paymentsCollection().findOne(merchantId ? { _id: id, merchantId } : { _id: id });
 }
 
-export async function listPayments(merchantId: string, opts: { limit: number; startingAfter?: string }) {
+export const PAYMENT_STATUSES: PaymentStatus[] = ["created", "paid", "expired", "refunded"];
+
+export async function listPayments(
+  merchantId: string,
+  opts: { limit: number; startingAfter?: string; status?: PaymentStatus },
+) {
   let createdBefore: Date | undefined;
   if (opts.startingAfter) {
     const cursor = await paymentsCollection().findOne({ _id: opts.startingAfter, merchantId });
     createdBefore = cursor?.createdAt;
   }
-  const filter = createdBefore ? { merchantId, createdAt: { $lt: createdBefore } } : { merchantId };
+  const filter: Record<string, unknown> = { merchantId };
+  if (createdBefore) filter.createdAt = { $lt: createdBefore };
+  if (opts.status) filter.status = opts.status;
   const docs = await paymentsCollection()
     .find(filter)
     .sort({ createdAt: -1 })
@@ -301,6 +309,7 @@ export function serializePayment(doc: PaymentDoc) {
     paidBy: doc.paidBy,
     txHash: doc.txHash,
     checkoutUrl: checkoutUrl(doc._id),
+    onchain: { paymentId: doc.onchainPaymentId, merchantId: doc.onchainMerchantId },
     successUrl: doc.successUrl,
     cancelUrl: doc.cancelUrl,
     expiresAt: iso(doc.expiresAt),
@@ -310,13 +319,15 @@ export function serializePayment(doc: PaymentDoc) {
   };
 }
 
+export type CheckoutData = Awaited<ReturnType<typeof serializeCheckout>>;
+
 /**
  * Everything a payer needs, with no secrets: used by the hosted checkout page and by
  * AI agents paying in code. The `contractCall` block is ready to pass to
  * AevifyCheckout.pay(request, signature).
  */
 export async function serializeCheckout(doc: PaymentDoc, merchant: MerchantDoc) {
-  const { chainId, checkoutAddress } = getChainContext();
+  const { checkoutAddress } = getChainContext();
   const token = await getCheckoutToken();
   return {
     id: doc._id,
@@ -338,7 +349,7 @@ export async function serializeCheckout(doc: PaymentDoc, merchant: MerchantDoc) 
     successUrl: doc.successUrl,
     cancelUrl: doc.cancelUrl,
     txHash: doc.txHash,
-    chain: { id: chainId, name: chainId === 44005 ? "QDay Aevum Testnet" : `Chain ${chainId}` },
+    chain: publicChainConfig(),
     token,
     contractCall: {
       address: checkoutAddress,
@@ -356,5 +367,51 @@ export async function serializeCheckout(doc: PaymentDoc, merchant: MerchantDoc) 
         signature: doc.signature,
       },
     },
+  };
+}
+
+// --- Stats -------------------------------------------------------------------
+
+/** Totals for the dashboard overview (from stored statuses; lists and reads keep them fresh). */
+export async function paymentStats(merchantId: string, now = new Date()) {
+  const docs = await paymentsCollection().find({ merchantId }).sort({ createdAt: -1 }).limit(5000).toArray();
+  let volume = 0n;
+  let fees = 0n;
+  let refunded = 0n;
+  const counts: Record<PaymentStatus, number> = { created: 0, paid: 0, expired: 0, refunded: 0 };
+
+  const days = 14;
+  const startOfToday = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const daily = Array.from({ length: days }, (_, i) => ({
+    date: new Date(startOfToday - (days - 1 - i) * 86_400_000).toISOString().slice(0, 10),
+    volume: 0n,
+    count: 0,
+  }));
+
+  for (const doc of docs) {
+    const status = doc.status === "created" && doc.expiresAt.getTime() < now.getTime() ? "expired" : doc.status;
+    counts[status] += 1;
+    if (status !== "paid" && status !== "refunded") continue;
+    const amount = BigInt(doc.amount);
+    volume += amount;
+    fees += BigInt(doc.fee ?? "0");
+    refunded += BigInt(doc.refunded);
+    const paidDay = (doc.paidAt ?? doc.createdAt).toISOString().slice(0, 10);
+    const bucket = daily.find((d) => d.date === paidDay);
+    if (bucket) {
+      bucket.volume += amount;
+      bucket.count += 1;
+    }
+  }
+
+  const fmt = (v: bigint) => fromBaseUnits(v, TUSD8.decimals);
+  return {
+    currency: TUSD8.symbol,
+    volume: fmt(volume),
+    fees: fmt(fees),
+    refunded: fmt(refunded),
+    net: fmt(volume - fees - refunded),
+    counts,
+    daily: daily.map((d) => ({ date: d.date, volume: fmt(d.volume), count: d.count })),
   };
 }

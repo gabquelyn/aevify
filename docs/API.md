@@ -151,6 +151,44 @@ Returns everything needed to pay, and no merchant secrets:
 
 ---
 
+## Hosted checkout
+
+`checkoutUrl` (`/pay/:id`) is a ready-made checkout page. The customer:
+
+1. sees your business name (with "Verified on Aevum" once your payout wallet is registered),
+   the amount, description and a countdown to `expiresAt`;
+2. connects a browser wallet (MetaMask or any EIP-6963 wallet; on mobile, "Open in MetaMask");
+3. is switched to Aevum automatically (the network is added to the wallet if needed);
+4. pays in **one step** if the token supports EIP-2612 permits (a free signature, then one
+   transaction), otherwise **approve, then pay**;
+5. sees a receipt with a link to the transaction, then returns to your `successUrl`.
+
+Balances, gas, payer-locked payments, expiry and contract errors are all explained in plain
+language before anything is sent.
+
+**Return URLs:** after payment the customer is sent to `successUrl` with
+`?aevify_payment_id=pay_…` appended. "Cancel and return" goes to `cancelUrl`. Always confirm the
+payment server-side (`GET /api/v1/payments/:id` or the webhook) before fulfilling: a URL alone
+isn't proof of payment.
+
+**Embedded:** `/pay/:id?embed=1` is for showing the checkout in an iframe (what `@aevify/react`
+will do). Instead of redirecting, it posts messages to the parent window:
+
+```js
+window.addEventListener("message", (e) => {
+  if (e.data?.source !== "aevify") return;
+  // e.data.type: "ready" | "payment.paid" (with txHash) | "payment.cancelled"
+  // e.data.paymentId
+});
+```
+
+## Public config
+
+`GET /api/v1/config`: public, CORS-enabled. The chain (ID, name, RPC URL for wallets, explorer),
+the checkout contract address and the token. Used by the dashboard and SDKs.
+
+---
+
 ## Dashboard API (signed-in session)
 
 Used by the dashboard; authenticated with the session cookie from signing in.
@@ -166,7 +204,10 @@ Used by the dashboard; authenticated with the session cookie from signing in.
 | GET/POST | `/api/merchant/keys` | List keys / create (`{ kind: "secret" \| "publishable" }`, max 5 active secret keys) |
 | DELETE | `/api/merchant/keys/:id` | Revoke a key immediately |
 | POST | `/api/merchant/webhook-secret` | Rotate the webhook signing secret |
-| GET | `/api/merchant/payments` | Recent payments |
+| GET | `/api/merchant/payments?status=&limit=&startingAfter=` | Payments, optionally filtered by status |
+| POST | `/api/merchant/payments` | Create a payment link (same fields as `POST /api/v1/payments`) |
+| GET | `/api/merchant/payments/:id` | One payment, refreshed from the chain |
+| GET | `/api/merchant/stats` | Volume, fees, refunds, net, counts by status, and a 14-day series |
 
 ## Health
 

@@ -38,6 +38,8 @@ export const env = {
 
   // --- Chain ------------------------------------------------------------
   rpcUrl: () => optional("AEVUM_RPC_URL"),
+  /** RPC URL given to browsers (wallets). Defaults to AEVUM_RPC_URL; set it separately if that one contains an API key. */
+  publicRpcUrl: () => optional("AEVUM_PUBLIC_RPC_URL") ?? optional("AEVUM_RPC_URL"),
   chainId: () => Number(optional("AEVUM_CHAIN_ID") ?? 44005),
   checkoutAddress: () => optional("AEVIFY_CHECKOUT_ADDRESS"),
   signerPrivateKey: () => optional("AEVIFY_SIGNER_PRIVATE_KEY"),
