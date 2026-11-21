@@ -32,8 +32,7 @@ too (`make help` lists them all).
 | Service | What it's for |
 |---|---|
 | `deps` | Installs npm packages into a Docker volume. Other services run it first automatically, and it skips the install when nothing changed. |
-| `web` | Next.js dev server at http://localhost:3000 (`docker compose up`) |
-| `postgres` | Database for the app |
+| `web` | Next.js dev server at http://localhost:3000 (`docker compose up`). Uses the MongoDB at `MONGODB_URI` in `.env`. |
 | `contracts` | Toolbox for Hardhat: compile, test, deploy, verify, scripts. Run commands with `docker compose run --rm contracts <command>`. Starts in `packages/contracts`. |
 | `chain` | Local Hardhat chain at http://localhost:8545 for rehearsals |
 | `web-prod` | Production build of the web app, for self-hosting (not used by Vercel) |
@@ -313,7 +312,7 @@ repository with `apps/web` as the **Root Directory**.
 
 4. Add environment variables (Settings → Environment Variables): everything the web app
    needs from `.env`, such as `NEXT_PUBLIC_APP_URL` (your Vercel URL), `AEVUM_RPC_URL`,
-   `AEVIFY_CHECKOUT_ADDRESS` and `DATABASE_URL` (a hosted Postgres, not the Docker one).
+   `AEVIFY_CHECKOUT_ADDRESS`, `MONGODB_URI` and `MONGODB_DB`.
    **Never add deployer or owner keys to Vercel.**
 5. Deploy.
 
@@ -333,8 +332,10 @@ repository root.
 | Deploy shows the wrong chain ID | Check `AEVUM_RPC_URL` in `.env` is `https://rpc-test.qday.info`. |
 | `EACCES: permission denied` writing files (Linux) | The containers run as user ID 1000. Run `sudo chown -R 1000:1000 .` in the repository, or make sure your user ID is 1000 (`id -u`). |
 | `ECONNREFUSED` with `--network localhost` | Start the chain first: `docker compose up -d chain`. |
-| Port 3000, 5432 or 8545 already in use | Stop whatever uses it on your machine, or change the left-hand port in `docker-compose.yml`. |
+| Port 3000 or 8545 already in use | Stop whatever uses it on your machine, or change the left-hand port in `docker-compose.yml`. |
 | Dependencies seem stale or broken | `docker compose run --rm deps`. To reinstall from scratch: `docker volume rm aevify_node_modules`, then run `deps` again. |
+| `/api/health` shows `"database": "not_configured"` | Set `MONGODB_URI` in `.env` (uncomment the line), then `docker compose restart web`. |
+| `/api/health` shows `"database": "error"` | Check the URI's user and password. In MongoDB Atlas, also allow your IP (Network Access); for Vercel and Railway, allow `0.0.0.0/0`. |
 | Web app doesn't reload on file changes | Restart it with `docker compose restart web`. |
 | `Merchant ... isn't registered` | Run step 9's register command first, with the same `MERCHANT_SLUG`. |
 | `Set AEVIFY_CHECKOUT_ADDRESS in .env` | Add the deployed address to `.env` (step 8), or pass `-e CHECKOUT_ADDRESS=0x...`. |

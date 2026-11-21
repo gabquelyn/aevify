@@ -16,10 +16,10 @@ help: ## List the shortcuts
 
 # --- App -----------------------------------------------------------------
 
-up: ## Start the web app (localhost:3000) and Postgres
+up: ## Start the web app (localhost:3000)
 	$(COMPOSE) up
 
-down: ## Stop everything (keeps volumes: node_modules, keystore, database)
+down: ## Stop everything (keeps volumes: node_modules, Hardhat keystore)
 	$(COMPOSE) --profile local --profile prod down
 
 logs: ## Follow logs of running services

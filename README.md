@@ -17,6 +17,7 @@ checkout contract, and merchants are notified by signed webhook.
 | Shared types and constants | `packages/shared` | ✅ |
 | Docker dev environment, production image and CI | `docker/`, `docker-compose.yml`, `apps/web/Dockerfile`, `.github/workflows` | ✅ |
 | Checkout contract, tests, deploy scripts | `packages/contracts`, [DEPLOY.md](./DEPLOY.md) | ✅ (deploy to Aevum pending) |
+| MongoDB connection + `/api/health` | `apps/web/src/lib/db.ts` | ✅ |
 | Gateway API and merchant dashboard | `apps/web` | Planned |
 | Hosted checkout | `apps/web` | Planned |
 | Chain listener and webhooks | `apps/listener` | Planned |
@@ -52,8 +53,11 @@ Node.js on your machine is optional.
 
 ```bash
 cp .env.example .env
-docker compose up            # web app at http://localhost:3000, plus Postgres
+docker compose up            # web app at http://localhost:3000
 ```
+
+Set `MONGODB_URI` in `.env` to your MongoDB connection string (for example a free MongoDB
+Atlas cluster), then open http://localhost:3000/api/health to check the connection.
 
 The first run builds the dev image and installs dependencies into a Docker volume, which takes
 a few minutes. Your code is mounted into the containers, so edits reload automatically.
