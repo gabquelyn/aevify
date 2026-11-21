@@ -1,8 +1,36 @@
-# Run Aevify locally:  docker compose up --build
-# The checkout contract lives on QDay Aevum Testnet, so containers only need an RPC URL (see .env.example).
-# The listener and demo store will be added here as they are built.
+# Aevify runs entirely in Docker. You only need Docker installed; no Node.js on your machine.
+#
+#   docker compose up                          Web app (http://localhost:3000) + Postgres
+#   docker compose run --rm contracts npm test Contract tests
+#   docker compose up -d chain                 Local Hardhat chain (http://localhost:8545)
+#   docker compose up --build web-prod         Production web image (http://localhost:3001)
+#
+# See README.md and DEPLOY.md for everything else. `make help` lists shortcuts.
+
+name: aevify
+
+# Shared settings for every service that runs project code from the mounted repository.
+x-dev: &dev
+  build:
+    context: .
+    dockerfile: docker/dev.Dockerfile
+  image: aevify-dev:local
+  working_dir: /app
+  volumes:
+    - .:/app
+    - node_modules:/app/node_modules
+    - hardhat-cache:/home/node/.cache/hardhat-nodejs # downloaded Solidity compilers
+    - hardhat-config:/home/node/.config/hardhat-nodejs # Hardhat keystore (encrypted secrets)
+  env_file:
+    - path: .env
+      required: false
 
 services:
+  # Installs npm dependencies into the node_modules volume (skipped when nothing changed).
+  deps:
+    <<: *dev
+    command: install-deps
+
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
@@ -20,21 +48,66 @@ services:
       timeout: 3s
       retries: 10
 
+  # Next.js dev server with hot reload: landing page, dashboard, hosted checkout, API.
   web:
+    <<: *dev
+    command: npm run dev -w @aevify/web -- --hostname 0.0.0.0 --port 3000
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://aevify:aevify@postgres:5432/aevify
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+  # Contract toolbox: compile, test, deploy, verify, admin scripts.
+  # Use with `docker compose run --rm contracts <command>`.
+  contracts:
+    <<: *dev
+    profiles: [tools]
+    working_dir: /app/packages/contracts
+    command: npm test
+    environment:
+      LOCAL_RPC_URL: http://chain:8545 # how `--network localhost` reaches the chain service
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+
+  # Local Hardhat chain for rehearsing deployments without touching Aevum.
+  chain:
+    <<: *dev
+    profiles: [local]
+    working_dir: /app/packages/contracts
+    command: npx hardhat node --hostname 0.0.0.0
+    ports:
+      - "8545:8545"
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+
+  # Production build of the web app (the same image a server or Railway/Fly would run).
+  # Vercel doesn't use this; it builds apps/web directly (see DEPLOY.md).
+  web-prod:
+    profiles: [prod]
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    restart: unless-stopped
+    image: aevify-web:local
     env_file:
       - path: .env
         required: false
     environment:
       DATABASE_URL: postgres://aevify:aevify@postgres:5432/aevify
     ports:
-      - "3000:3000"
+      - "3001:3000"
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
   pgdata:
+  node_modules:
+  hardhat-cache:
+  hardhat-config:

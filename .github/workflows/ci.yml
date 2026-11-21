@@ -10,26 +10,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-
-      - run: npm ci
-      - run: npm run typecheck
-      - run: npm run build
-        env:
-          NEXT_TELEMETRY_DISABLED: 1
-
+  # The same Docker workflow you use locally (see README.md).
   docker:
     runs-on: ubuntu-latest
-    needs: build
     steps:
       - uses: actions/checkout@v4
-      - name: Build web image
-        run: docker build -f apps/web/Dockerfile -t aevify-web .
+
+      - name: Let the container user (uid 1000) write to the checkout
+        run: chmod -R a+rwX .
+
+      - name: Build the dev image
+        run: docker compose build deps
+
+      - name: Install dependencies
+        run: docker compose run --rm -T deps
+
+      - name: Typecheck
+        run: docker compose run --rm -T -w /app contracts npm run typecheck
+
+      - name: Contract tests
+        run: docker compose run --rm -T contracts npm test
+
+      - name: Build
+        run: docker compose run --rm -T -w /app contracts npm run build
+
+      - name: Build the production web image
+        run: docker compose build web-prod

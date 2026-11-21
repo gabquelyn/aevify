@@ -1,0 +1,22 @@
+{
+  "extends": "@aevify/typescript-config/base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": [
+      "ES2023"
+    ],
+    "types": [
+      "node"
+    ],
+    "noEmit": true,
+    "noUncheckedIndexedAccess": false
+  },
+  "include": [
+    "hardhat.config.ts",
+    "test",
+    "ignition",
+    "scripts",
+    "artifacts/**/*.d.ts"
+  ]
+}

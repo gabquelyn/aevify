@@ -15,8 +15,8 @@ checkout contract, and merchants are notified by signed webhook.
 |---|---|---|
 | Landing page and design system | `apps/web`, `packages/tailwind-config` | ✅ |
 | Shared types and constants | `packages/shared` | ✅ |
-| Docker and CI | `apps/web/Dockerfile`, `docker-compose.yml`, `.github/workflows` | ✅ |
-| Checkout contract | `packages/contracts` | Planned |
+| Docker dev environment, production image and CI | `docker/`, `docker-compose.yml`, `apps/web/Dockerfile`, `.github/workflows` | ✅ |
+| Checkout contract, tests, deploy scripts | `packages/contracts`, [DEPLOY.md](./DEPLOY.md) | ✅ (deploy to Aevum pending) |
 | Gateway API and merchant dashboard | `apps/web` | Planned |
 | Hosted checkout | `apps/web` | Planned |
 | Chain listener and webhooks | `apps/listener` | Planned |
@@ -37,28 +37,46 @@ aevify/
 │   ├── typescript-config/   Shared tsconfig
 │   ├── react/               @aevify/react (published to npm)
 │   ├── node/                @aevify/node (published to npm)
-│   └── contracts/           Checkout contract
+│   └── contracts/           Checkout contract (Hardhat 3), tests, deploy scripts
+├── docker/                  Dev image + dependency installer used by docker-compose.yml
+├── DEPLOY.md                Deploy the contract (Docker) and the web app (Vercel)
+├── Makefile                 Shortcuts for the Docker commands
 ├── docker-compose.yml
 └── .github/workflows/ci.yml
 ```
 
 ## Getting started
 
-Requirements: Node.js 22+, npm 10+, Docker (optional).
+Everything runs in Docker. You only need **Docker Desktop** (or Docker Engine with Compose).
+Node.js on your machine is optional.
 
 ```bash
-npm install
-cp .env.example .env        # fill in AEVUM_RPC_URL
-npm run dev                 # http://localhost:3000
+cp .env.example .env
+docker compose up            # web app at http://localhost:3000, plus Postgres
 ```
 
-Other commands:
+The first run builds the dev image and installs dependencies into a Docker volume, which takes
+a few minutes. Your code is mounted into the containers, so edits reload automatically.
+
+Common commands (`make` shortcuts in brackets; run `make help` for the full list):
 
 ```bash
-npm run typecheck
-npm run build
-docker compose up --build   # web app + Postgres
+docker compose run --rm contracts npm test                   # contract tests     [make test]
+docker compose run --rm -w /app contracts npm run typecheck  # typecheck all      [make typecheck]
+docker compose run --rm -w /app contracts npm run build      # build all          [make build]
+docker compose up -d chain                                   # local chain :8545  [make chain]
+docker compose run --rm contracts bash                       # shell              [make shell]
+docker compose up --build web-prod                           # production image :3001 [make prod]
 ```
+
+To add a dependency, run npm inside the container, for example:
+
+```bash
+docker compose run --rm -w /app contracts npm install <package> -w @aevify/web
+```
+
+**Deploying:** the contract deploys from Docker, and the web app deploys to Vercel with
+`apps/web` as the root directory. Both are covered step by step in [DEPLOY.md](./DEPLOY.md).
 
 ## Aevum Testnet
 
@@ -68,6 +86,16 @@ docker compose up --build   # web app + Postgres
 | Gas token | tQDAY (faucet: 5 tQDAY per address every 24 hours) |
 | tUSD8 | `0x456569838f1d43009A91ebA4263147Afd7233483` (ERC-20, **6 decimals**) |
 | Faucet | faucet.qday.info |
+
+## Checkout contract
+
+`AevifyCheckout` accepts tUSD8 for payment requests signed by the Aevify backend (EIP-712),
+sends 3% to the fee recipient and the rest straight to the merchant, and never holds funds.
+Safety controls: tamper-proof signed amounts, single-use expiring requests, optional
+payer lock for AI agents, a 5% fee ceiling enforced on-chain, 24-hour delayed payout wallet
+changes that the merchant can cancel, merchant refunds, and an emergency pause.
+
+Details: [packages/contracts/README.md](./packages/contracts/README.md) · Deployment: [DEPLOY.md](./DEPLOY.md)
 
 ## Fees
 

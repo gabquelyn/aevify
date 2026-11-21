@@ -1,0 +1,34 @@
+{
+  "name": "@aevify/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Aevify checkout contract for QDay Aevum Testnet.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "hardhat build",
+    "test": "hardhat test",
+    "typecheck": "hardhat build --quiet && tsc --noEmit",
+    "node": "hardhat node",
+    "deploy:local": "hardhat ignition deploy ignition/modules/LocalDemo.ts --network localhost --reset",
+    "deploy:aevum": "hardhat ignition deploy ignition/modules/AevifyCheckout.ts --network aevum --verify",
+    "verify:aevum": "hardhat ignition verify chain-44005",
+    "register-merchant": "hardhat run scripts/register-merchant.ts",
+    "smoke-pay": "hardhat run scripts/smoke-pay.ts",
+    "export-abi": "hardhat run scripts/export-abi.ts",
+    "clean": "hardhat clean",
+    "admin": "hardhat run scripts/admin.ts"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "5.0.2"
+  },
+  "devDependencies": {
+    "@aevify/typescript-config": "*",
+    "@nomicfoundation/hardhat-ignition": "^3.1.10",
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.7",
+    "@types/node": "^22.20.5",
+    "hardhat": "^3.22.0",
+    "typescript": "^5.9.3",
+    "viem": "^2.58.4"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "AevifyCheckoutModule": {
+    "token": "0x456569838f1d43009A91ebA4263147Afd7233483",
+    "owner": "0xYOUR_OWNER_ADDRESS",
+    "signer": "0xYOUR_BACKEND_SIGNER_ADDRESS",
+    "operator": "0xYOUR_BACKEND_OPERATOR_ADDRESS",
+    "feeRecipient": "0xYOUR_FEE_WALLET_ADDRESS",
+    "feeBps": 300
+  }
+}

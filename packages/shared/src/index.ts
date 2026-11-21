@@ -62,3 +62,9 @@ export function fromBaseUnits(value: bigint, decimals: number = TUSD8.decimals, 
   const fraction = (value % base).toString().padStart(decimals, "0").replace(/0+$/, "");
   return `${whole}.${fraction.padEnd(minFraction, "0")}`;
 }
+
+/** Typed ABI of the AevifyCheckout contract (regenerate with `npm run export-abi -w @aevify/contracts`). */
+export { aevifyCheckoutAbi } from "./abi/aevify-checkout";
+
+/** The EIP-712 domain name and version the checkout contract uses for payment requests. */
+export const CHECKOUT_EIP712 = { name: "Aevify Checkout", version: "1" } as const;
