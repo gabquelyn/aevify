@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@aevify/typescript-config": "workspace:*",
+    "@aevify/typescript-config": "*",
     "typescript": "^5.9.3"
   }
 }

@@ -3,7 +3,11 @@
   "private": true,
   "description": "Stablecoin checkout for online stores and AI agents, settled in tUSD8 on QDay Aevum Testnet.",
   "license": "MIT",
-  "packageManager": "pnpm@10.28.0",
+  "packageManager": "npm@10.9.9",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "engines": {
     "node": ">=22"
   },

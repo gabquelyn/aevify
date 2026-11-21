@@ -44,19 +44,19 @@ aevify/
 
 ## Getting started
 
-Requirements: Node.js 22+, pnpm 10 (`corepack enable`), Docker (optional).
+Requirements: Node.js 22+, npm 10+, Docker (optional).
 
 ```bash
-pnpm install
+npm install
 cp .env.example .env        # fill in AEVUM_RPC_URL
-pnpm dev                    # http://localhost:3000
+npm run dev                 # http://localhost:3000
 ```
 
 Other commands:
 
 ```bash
-pnpm typecheck
-pnpm build
+npm run typecheck
+npm run build
 docker compose up --build   # web app + Postgres
 ```
 
