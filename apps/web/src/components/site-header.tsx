@@ -22,7 +22,7 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="flex items-center gap-3">
-          <Link href="/dashboard" className="hidden text-sm text-ink-muted transition-colors hover:text-ink sm:block">
+          <Link href="/signin" className="hidden text-sm text-ink-muted transition-colors hover:text-ink sm:block">
             Sign in
           </Link>
           <Link

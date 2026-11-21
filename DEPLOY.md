@@ -1,10 +1,11 @@
 # Deploying Aevify
 
 Everything here runs in **Docker**. You don't need Node.js on your machine. The one exception
-is the web app on **Vercel**, which builds `apps/web` itself (section B).
+is the web app on **Vercel**, which builds `apps/web` itself (section C).
 
-- **A. Checkout contract → QDay Aevum Testnet** (Docker)
-- **B. Web app → Vercel** (`apps/web` as the root directory)
+- **A. Checkout contract → QDay Aevum Testnet** (Docker), then connect the API to it
+- **B. Sign-in: Google and email (Brevo)**
+- **C. Web app → Vercel** (`apps/web` as the root directory)
 
 > Everything here uses test tokens only. Never reuse a wallet that holds real funds.
 
@@ -277,6 +278,45 @@ docker compose run --rm -e ACTION=set-signer -e VALUE=0x... contracts npm run ad
 `set-operator` and `set-fee-recipient` work the same way. Ownership moves in two steps
 (`transferOwnership`, then `acceptOwnership` from the new owner) and can't be renounced.
 
+## 11. Connect the API to the contract
+
+The API signs payment requests with the **signer** key and registers merchants with the
+**operator** key, so it needs the private keys of the signer and operator addresses you
+deployed with (step 1). In `.env`:
+
+```bash
+AEVIFY_CHECKOUT_ADDRESS=0x...        # from step 8
+AEVIFY_SIGNER_PRIVATE_KEY=0x...      # the signer wallet's key (needs no gas)
+AEVIFY_OPERATOR_PRIVATE_KEY=0x...    # the operator wallet's key (needs a little tQDAY)
+```
+
+Restart the app (`docker compose restart web`) and open http://localhost:3000/api/health.
+You want:
+
+```json
+{ "status": "ok", "database": "connected", "chain": { "signer": "ok", "operator": "ok" } }
+```
+
+`"mismatch"` means the key isn't the one the contract expects. Use the right key, or point
+the contract at the key's address with `ACTION=set-signer` / `ACTION=set-operator` (step 10).
+
+Then try the full flow:
+
+1. Sign in at http://localhost:3000/signin and create your business.
+2. **Connect wallet** (MetaMask on Aevum). The operator registers it on-chain; the
+   dashboard shows "Verified on Aevum".
+3. **Create secret key** and copy it.
+4. Create a payment:
+
+   ```bash
+   curl -X POST http://localhost:3000/api/v1/payments \
+     -H "Authorization: Bearer sk_test_..." -H "Content-Type: application/json" \
+     -d '{ "amount": "0.10", "orderId": "test-1" }'
+   ```
+
+The hosted checkout page (`checkoutUrl`) comes next. Until then, the response and
+`GET /api/v1/checkout/<id>` show exactly what to sign and send (see `docs/API.md`).
+
 ## Changing the contract later
 
 1. Edit `packages/contracts/contracts/AevifyCheckout.sol` and update the tests.
@@ -294,7 +334,51 @@ docker compose run --rm -e ACTION=set-signer -e VALUE=0x... contracts npm run ad
 
 ---
 
-# B. Web app → Vercel
+# B. Sign-in: Google and email (Brevo)
+
+Merchants sign in with Google or with an emailed link. Both are optional in development:
+without them, the email link is printed in the web logs (`docker compose logs web`).
+
+## Google
+
+1. Google Cloud Console → **APIs & Services → Credentials → Create credentials → OAuth client ID**.
+2. Application type: **Web application**.
+3. **Authorized JavaScript origins:** `http://localhost:3000` (and your Vercel URL later).
+4. **Authorized redirect URIs:** `http://localhost:3000/api/auth/callback/google`
+   (and `https://<your-vercel-domain>/api/auth/callback/google` later).
+5. Copy both the **Client ID and the Client Secret** into `.env`:
+
+   ```bash
+   GOOGLE_CLIENT_ID=...apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=...
+   ```
+
+The "Continue with Google" button appears once both are set.
+
+## Email links via Brevo
+
+1. Brevo → **Settings → SMTP & API → SMTP** tab. Copy the **SMTP login** and generate an
+   **SMTP key**. Brevo's SMTP relay needs an SMTP key; a Brevo API key won't work.
+2. Brevo → **Senders**: add and verify the address you'll send from.
+3. In `.env`:
+
+   ```bash
+   BREVO_SMTP_LOGIN=...           # e.g. 123abc@smtp-brevo.com or your login email
+   BREVO_SMTP_KEY=...
+   EMAIL_FROM=Aevify <no-reply@yourdomain.com>   # must be a verified Brevo sender
+   ```
+
+## Session secret
+
+Required in production (any long random string):
+
+```bash
+BETTER_AUTH_SECRET=$(openssl rand -base64 32)
+```
+
+---
+
+# C. Web app → Vercel
 
 Vercel builds the web app from source, so Docker isn't involved here. The repository is an npm
 workspace, and `apps/web` uses the shared packages in `packages/`, so Vercel needs the whole
@@ -310,11 +394,22 @@ repository with `apps/web` as the **Root Directory**.
    | Root Directory | `apps/web` |
    | Build / Install / Output | Leave the defaults |
 
-4. Add environment variables (Settings → Environment Variables): everything the web app
-   needs from `.env`, such as `NEXT_PUBLIC_APP_URL` (your Vercel URL), `AEVUM_RPC_URL`,
-   `AEVIFY_CHECKOUT_ADDRESS`, `MONGODB_URI` and `MONGODB_DB`.
-   **Never add deployer or owner keys to Vercel.**
-5. Deploy.
+4. Add environment variables (Settings → Environment Variables):
+
+   | Variable | Value |
+   |---|---|
+   | `NEXT_PUBLIC_APP_URL` | `https://<your-vercel-domain>` |
+   | `BETTER_AUTH_SECRET` | A new long random string (not your local one) |
+   | `MONGODB_URI`, `MONGODB_DB` | Your Atlas connection (allow `0.0.0.0/0` in Atlas Network Access) |
+   | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Add the Vercel redirect URI in Google Cloud first (section B) |
+   | `BREVO_SMTP_LOGIN`, `BREVO_SMTP_KEY`, `EMAIL_FROM` | From section B |
+   | `AEVUM_RPC_URL`, `AEVUM_CHAIN_ID` | `https://rpc-test.qday.info`, `44005` |
+   | `AEVIFY_CHECKOUT_ADDRESS` | From step 8 |
+   | `AEVIFY_SIGNER_PRIVATE_KEY`, `AEVIFY_OPERATOR_PRIVATE_KEY` | From step 11. Mark them **Sensitive**. |
+
+   **Never add the deployer or owner keys to Vercel.** The signer and operator keys can only
+   sign payment requests and register merchants; they can't move funds or change fees.
+5. Deploy, then open `https://<your-vercel-domain>/api/health`.
 
 If the build can't find `@aevify/shared` or `@aevify/tailwind-config`, set the Build Command
 to `cd ../.. && npx turbo run build --filter=@aevify/web` so the build runs from the
@@ -336,6 +431,10 @@ repository root.
 | Dependencies seem stale or broken | `docker compose run --rm deps`. To reinstall from scratch: `docker volume rm aevify_node_modules`, then run `deps` again. |
 | `/api/health` shows `"database": "not_configured"` | Set `MONGODB_URI` in `.env` (uncomment the line), then `docker compose restart web`. |
 | `/api/health` shows `"database": "error"` | Check the URI's user and password. In MongoDB Atlas, also allow your IP (Network Access); for Vercel and Railway, allow `0.0.0.0/0`. |
+| Sign-in email never arrives | Check `docker compose logs web` for SMTP errors. Use an SMTP key (not an API key), and make `EMAIL_FROM` a verified Brevo sender. Without SMTP settings, the link is printed in those logs instead. |
+| Google: `redirect_uri_mismatch` | Add `<NEXT_PUBLIC_APP_URL>/api/auth/callback/google` exactly to the OAuth client's redirect URIs. |
+| `/api/health` shows `"signer": "mismatch"` | `AEVIFY_SIGNER_PRIVATE_KEY` isn't the contract's signer (step 11). |
+| Payments: `merchant_not_ready` | Connect a payout wallet in the dashboard first. |
 | Web app doesn't reload on file changes | Restart it with `docker compose restart web`. |
 | `Merchant ... isn't registered` | Run step 9's register command first, with the same `MERCHANT_SLUG`. |
 | `Set AEVIFY_CHECKOUT_ADDRESS in .env` | Add the deployed address to `.env` (step 8), or pass `-e CHECKOUT_ADDRESS=0x...`. |

@@ -28,8 +28,19 @@ jobs:
       - name: Typecheck
         run: docker compose run --rm -T -w /app contracts npm run typecheck
 
-      - name: Contract tests
-        run: docker compose run --rm -T contracts npm test
+      - name: Tests (contracts + web API)
+        run: docker compose run --rm -T -w /app contracts npm test
+
+      - name: End-to-end (real contract on a local chain + the API)
+        run: |
+          docker compose up -d chain
+          for i in $(seq 1 30); do
+            curl -sf -X POST http://localhost:8545 -H 'content-type: application/json' \
+              --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' && break
+            sleep 2
+          done
+          docker compose run --rm -T contracts npm run deploy:local
+          docker compose run --rm -T -w /app/apps/web -e E2E_RPC_URL=http://chain:8545 contracts npm run test:e2e
 
       - name: Build
         run: docker compose run --rm -T -w /app contracts npm run build

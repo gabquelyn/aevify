@@ -1,8 +1,7 @@
 import { MongoClient, type Db } from "mongodb";
 
 /**
- * MongoDB access for the web app and API. Server-side only: never import this from a
- * client component.
+ * MongoDB access for the web app and API. Server-side only.
  *
  * Configure with MONGODB_URI (and optionally MONGODB_DB, default "aevify") in .env,
  * or in the Vercel project settings.
@@ -17,8 +16,8 @@ export const COLLECTIONS = {
 } as const;
 
 declare global {
-  // Cached across hot reloads in dev and across warm invocations on Vercel.
-  var _aevifyMongoClient: Promise<MongoClient> | undefined;
+  // One client per process: survives hot reloads in dev and warm invocations on Vercel.
+  var _aevifyMongoClient: MongoClient | undefined;
 }
 
 export class DatabaseNotConfiguredError extends Error {
@@ -29,29 +28,24 @@ export class DatabaseNotConfiguredError extends Error {
 }
 
 export function isDatabaseConfigured(): boolean {
-  return Boolean(process.env.MONGODB_URI);
+  return Boolean(process.env.MONGODB_URI?.trim());
 }
 
-function getClient(): Promise<MongoClient> {
-  const uri = process.env.MONGODB_URI;
+/**
+ * The shared MongoClient. The driver connects on first use and reconnects by itself,
+ * so a temporary outage doesn't leave the app stuck.
+ */
+export function getMongoClient(): MongoClient {
+  const uri = process.env.MONGODB_URI?.trim();
   if (!uri) throw new DatabaseNotConfiguredError();
-
-  if (!globalThis._aevifyMongoClient) {
-    const client = new MongoClient(uri, {
-      appName: "aevify-web",
-      serverSelectionTimeoutMS: 5_000,
-    });
-    globalThis._aevifyMongoClient = client.connect().catch((error: unknown) => {
-      // Don't cache a failed connection; the next request will try again.
-      globalThis._aevifyMongoClient = undefined;
-      throw error;
-    });
-  }
+  globalThis._aevifyMongoClient ??= new MongoClient(uri, {
+    appName: "aevify-web",
+    serverSelectionTimeoutMS: 5_000,
+  });
   return globalThis._aevifyMongoClient;
 }
 
-/** The Aevify database. Connects on first use and reuses the connection afterwards. */
-export async function getDb(): Promise<Db> {
-  const client = await getClient();
-  return client.db(process.env.MONGODB_DB || "aevify");
+/** The Aevify database. */
+export function getDb(): Db {
+  return getMongoClient().db(process.env.MONGODB_DB?.trim() || "aevify");
 }

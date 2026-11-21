@@ -10,7 +10,8 @@
  * If the contract's signer isn't the deployer, also set AEVUM_SIGNER_PRIVATE_KEY.
  */
 import { network } from "hardhat";
-import { erc20Abi, formatUnits, getAddress, keccak256, parseUnits, toHex, zeroAddress, type Hex } from "viem";
+import { paymentIdToBytes32, paymentRequestTypedData } from "@aevify/shared";
+import { erc20Abi, formatUnits, getAddress, parseUnits, zeroAddress, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { checkoutAddressFromEnv, merchantIdFromSlug, txLink } from "./lib.js";
 
@@ -51,7 +52,7 @@ if (balance < amount) {
 // 1. Build and sign the payment request (this is the backend's job in production).
 const block = await publicClient.getBlock();
 const request = {
-  paymentId: keccak256(toHex(`smoke:${Date.now()}`)),
+  paymentId: paymentIdToBytes32(`smoke_${Date.now()}`),
   merchantId,
   amount,
   expiresAt: block.timestamp + 15n * 60n,
@@ -60,20 +61,8 @@ const request = {
 
 const onChainSigner = getAddress(await checkout.read.signer());
 const signerKey = process.env.AEVUM_SIGNER_PRIVATE_KEY as Hex | undefined;
-const typedData = {
-  domain: { name: "Aevify Checkout", version: "1", chainId, verifyingContract: checkoutAddress },
-  types: {
-    PaymentRequest: [
-      { name: "paymentId", type: "bytes32" },
-      { name: "merchantId", type: "bytes32" },
-      { name: "amount", type: "uint256" },
-      { name: "expiresAt", type: "uint64" },
-      { name: "payer", type: "address" },
-    ],
-  },
-  primaryType: "PaymentRequest",
-  message: request,
-} as const;
+// The same helper the Aevify API uses to sign requests.
+const typedData = paymentRequestTypedData({ chainId, checkoutAddress, request });
 
 let signature: Hex;
 if (onChainSigner === getAddress(payer.account.address)) {

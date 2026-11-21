@@ -18,7 +18,9 @@ checkout contract, and merchants are notified by signed webhook.
 | Docker dev environment, production image and CI | `docker/`, `docker-compose.yml`, `apps/web/Dockerfile`, `.github/workflows` | ✅ |
 | Checkout contract, tests, deploy scripts | `packages/contracts`, [DEPLOY.md](./DEPLOY.md) | ✅ (deploy to Aevum pending) |
 | MongoDB connection + `/api/health` | `apps/web/src/lib/db.ts` | ✅ |
-| Gateway API and merchant dashboard | `apps/web` | Planned |
+| Sign-in (Google + email links via Brevo) | `apps/web/src/lib/auth.ts`, `/signin` | ✅ |
+| Gateway API: payments, keys, payout wallets ([reference](./docs/API.md)) | `apps/web/src/app/api` | ✅ |
+| Merchant dashboard | `/dashboard` | Basic version ✅, full version planned |
 | Hosted checkout | `apps/web` | Planned |
 | Chain listener and webhooks | `apps/listener` | Planned |
 | `@aevify/react` and `@aevify/node` | `packages/react`, `packages/node` | Planned |
@@ -65,7 +67,8 @@ a few minutes. Your code is mounted into the containers, so edits reload automat
 Common commands (`make` shortcuts in brackets; run `make help` for the full list):
 
 ```bash
-docker compose run --rm contracts npm test                   # contract tests     [make test]
+docker compose run --rm -w /app contracts npm test          # all tests          [make test]
+make e2e                                                     # end-to-end on a local chain
 docker compose run --rm -w /app contracts npm run typecheck  # typecheck all      [make typecheck]
 docker compose run --rm -w /app contracts npm run build      # build all          [make build]
 docker compose up -d chain                                   # local chain :8545  [make chain]

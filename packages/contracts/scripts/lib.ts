@@ -1,4 +1,4 @@
-import { keccak256, toHex, type Hex } from "viem";
+export { merchantIdFromSlug } from "@aevify/shared";
 
 export const EXPLORER_URL = "https://explorer-test.qday.info";
 
@@ -22,14 +22,6 @@ export function checkoutAddressFromEnv(): string {
     process.exit(1);
   }
   return value;
-}
-
-/**
- * Aevify identifies merchants on-chain by keccak256 of their slug, e.g. "demo-store".
- * The backend must use the same rule when it signs payment requests.
- */
-export function merchantIdFromSlug(slug: string): Hex {
-  return keccak256(toHex(slug));
 }
 
 export function txLink(chainId: number, hash: string): string {

@@ -20,6 +20,7 @@
     "admin": "hardhat run scripts/admin.ts"
   },
   "dependencies": {
+    "@aevify/shared": "*",
     "@openzeppelin/contracts": "5.0.2"
   },
   "devDependencies": {

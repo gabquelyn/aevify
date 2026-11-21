@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { network } from "hardhat";
-import { keccak256, parseUnits, toHex, zeroAddress, type Hex } from "viem";
+import { merchantIdFromSlug, paymentIdToBytes32, paymentRequestTypedData } from "@aevify/shared";
+import { hashTypedData, keccak256, parseUnits, recoverTypedDataAddress, toHex, zeroAddress, type Hex } from "viem";
 
 const { viem, networkHelpers } = await network.create();
 const { time, loadFixture } = networkHelpers;
@@ -227,6 +228,41 @@ describe("AevifyCheckout", () => {
         token,
         "ERC20InsufficientAllowance",
       );
+    });
+  });
+
+  describe("signing with @aevify/shared (what the Aevify API uses)", () => {
+    it("produces the same EIP-712 digest as the contract", async () => {
+      const { checkout, chainId } = await loadFixture(deployFixture);
+      const request = {
+        paymentId: paymentIdToBytes32("pay_test123"),
+        merchantId: merchantIdFromSlug("demo-store"),
+        amount: usd("12.34"),
+        expiresAt: 1_900_000_000n,
+        payer: zeroAddress,
+      } as const;
+      const typedData = paymentRequestTypedData({ chainId, checkoutAddress: checkout.address, request });
+      assert.equal(hashTypedData(typedData), await checkout.read.hashPaymentRequest([request]));
+    });
+
+    it("signs requests the contract accepts", async () => {
+      const { checkout, signer, customer, chainId, approve } = await loadFixture(deployFixture);
+      const request = {
+        paymentId: paymentIdToBytes32("pay_shared_helper"),
+        merchantId: merchantIdFromSlug("merchant:demo-store"),
+        amount: usd("3"),
+        expiresAt: BigInt((await time.latest()) + 600),
+        payer: zeroAddress,
+      } as const;
+      const typedData = paymentRequestTypedData({ chainId, checkoutAddress: checkout.address, request });
+      const signature = await signer.signTypedData(typedData);
+      assert.equal(
+        (await recoverTypedDataAddress({ ...typedData, signature })).toLowerCase(),
+        signer.account.address.toLowerCase(),
+      );
+      await approve(customer, request.amount);
+      await checkout.write.pay([request, signature], { account: customer.account });
+      assert.equal(await checkout.read.isPaid([request.paymentId]), true);
     });
   });
 

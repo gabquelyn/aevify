@@ -7,7 +7,7 @@ COMPOSE   := docker compose
 CONTRACTS := $(COMPOSE) run --rm contracts
 PARAMS    ?= ignition/parameters/aevum.json
 
-.PHONY: help up down logs shell install test typecheck build \
+.PHONY: help up down logs shell install test test-web e2e typecheck build \
         chain chain-stop deploy-local smoke-local \
         keystore deploy verify register smoke status prod
 
@@ -36,8 +36,16 @@ prod: ## Build and run the production web image (localhost:3001)
 
 # --- Contracts -----------------------------------------------------------
 
-test: ## Run the contract tests
-	$(CONTRACTS) npm test
+test: ## Run all tests (contracts + web API)
+	$(COMPOSE) run --rm -w /app contracts npm test
+
+test-web: ## Run the web API tests
+	$(COMPOSE) run --rm -w /app/apps/web contracts npm test
+
+e2e: ## End-to-end: real contract on a fresh local chain + the API
+	$(COMPOSE) up -d --force-recreate chain
+	$(CONTRACTS) npm run deploy:local
+	$(COMPOSE) run --rm -w /app/apps/web -e E2E_RPC_URL=http://chain:8545 contracts npm run test:e2e
 
 typecheck: ## Typecheck every workspace
 	$(COMPOSE) run --rm -w /app contracts npm run typecheck
