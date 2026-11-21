@@ -1,0 +1,100 @@
+export const metadata = { title: "AI agents" };
+
+# AI agents
+
+An AI agent pays an Aevify checkout the same way a person does, but in code: it reads the
+payment request, checks it against its spending policy, and pays the contract from its own
+wallet. The store gets the same webhook either way. Aevify never holds an agent's keys or funds.
+
+## 1. The store creates a payment
+
+Like any payment. To make sure only one agent can pay it, set `payer` to the agent's wallet. The
+contract rejects any other payer.
+
+```ts
+const payment = await aevify.payments.create({
+  amount: "2.00",
+  description: "API credits",
+  payer: "0xAgentWallet…",   // optional: only this wallet may pay
+});
+// give payment.id to the agent
+```
+
+## 2. The agent reads the checkout data
+
+`GET /api/v1/checkout/:id` is public and has everything the agent needs: amount, verified
+merchant, expiry, and a ready-to-send contract call.
+
+```ts
+const checkout = await fetch(`${AEVIFY_BASE_URL}/api/v1/checkout/${paymentId}`).then((r) => r.json());
+```
+
+## 3. The agent checks its spending policy
+
+Decide in code before signing anything. For example:
+
+```ts
+const POLICY = { maxPerPayment: 5, dailyBudget: 10 };      // in tUSD8
+
+function allowed(checkout, spentToday) {
+  if (checkout.status !== "created") return "not payable";
+  if (!checkout.merchant.verified) return "merchant not verified on Aevum";
+  if (new Date(checkout.expiresAt) < new Date()) return "expired";
+  if (checkout.chain.id !== 44005) return "wrong network";
+  const amount = Number(checkout.amount);
+  if (amount > POLICY.maxPerPayment) return "over the per-payment limit: ask a human";
+  if (spentToday + amount > POLICY.dailyBudget) return "over the daily budget";
+  return null;
+}
+```
+
+Anything over the limit should go to a person for approval instead of being paid.
+
+## 4. The agent pays
+
+With [viem](https://viem.sh) and the agent's own key:
+
+```ts
+import { createWalletClient, createPublicClient, http, erc20Abi } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
+
+const account = privateKeyToAccount(process.env.AGENT_PRIVATE_KEY);
+const chain = { id: 44005, name: "QDay Aevum Testnet", nativeCurrency: { name: "tQDAY", symbol: "tQDAY", decimals: 18 }, rpcUrls: { default: { http: [checkout.chain.rpcUrl] } } };
+const wallet = createWalletClient({ account, chain, transport: http() });
+const reader = createPublicClient({ chain, transport: http() });
+
+const { contractCall: call } = checkout;
+
+// 1. Approve exactly this amount
+const approveHash = await wallet.writeContract({
+  address: call.approve.token,
+  abi: erc20Abi,
+  functionName: "approve",
+  args: [call.approve.spender, BigInt(call.approve.amount)],
+});
+await reader.waitForTransactionReceipt({ hash: approveHash });
+
+// 2. Pay the signed request
+const request = { ...call.args.request, amount: BigInt(call.args.request.amount), expiresAt: BigInt(call.args.request.expiresAt) };
+const payHash = await wallet.writeContract({ address: call.address, abi: call.abi, functionName: "pay", args: [request, call.args.signature] });
+await reader.waitForTransactionReceipt({ hash: payHash });
+```
+
+The agent's wallet needs tUSD8 for the payment and a little tQDAY for gas
+([faucet](https://faucet.qday.info/en)).
+
+## 5. The store gets the webhook
+
+`payment.paid` arrives as usual, with `paidBy` set to the agent's wallet. Nothing else changes for the store.
+
+## What's enforced where
+
+| Rule | Enforced by |
+|---|---|
+| Only the designated agent can pay (`payer`) | The contract |
+| The amount can't be changed | The contract (Aevify's EIP-712 signature) |
+| Each payment is paid once, before it expires | The contract |
+| Per-payment limits, daily budgets, ask-a-human | The agent's own code (as above) |
+
+For limits the agent can't bypass even if its code is compromised, give it a smart-contract
+wallet with spending limits. Aevum supports account-abstraction wallets.

@@ -46,6 +46,7 @@ e2e: ## End-to-end: real contract on a fresh local chain + the API
 	$(COMPOSE) up -d --force-recreate chain
 	$(CONTRACTS) npm run deploy:local
 	$(COMPOSE) run --rm -w /app/apps/web -e E2E_RPC_URL=http://chain:8545 contracts npm run test:e2e
+	$(COMPOSE) run --rm -w /app/apps/listener -e E2E_RPC_URL=http://chain:8545 contracts npm run test:e2e
 
 typecheck: ## Typecheck every workspace
 	$(COMPOSE) run --rm -w /app contracts npm run typecheck

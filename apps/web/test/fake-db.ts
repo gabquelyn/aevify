@@ -1,1 +1,1 @@
-export { MemoryDb as FakeDb, FakeCollection } from "@/lib/testing/memory-db";
+export { MemoryDb as FakeDb, FakeCollection } from "@aevify/shared/testing";

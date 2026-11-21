@@ -3,9 +3,14 @@ import {
   aevifyCheckoutAbi,
   fromBaseUnits,
   paymentIdToBytes32,
+  recordPaymentEvent,
+  serializePayment as serializePaymentObject,
   toBaseUnits,
   TUSD8,
+  type PaymentDoc,
   type PaymentRequestStruct,
+  type PaymentStatus,
+  type WebhookEventType,
 } from "@aevify/shared";
 import { getAddress, isAddress, zeroAddress, type Address, type Hex } from "viem";
 import { z } from "zod";
@@ -22,42 +27,11 @@ import { COLLECTIONS, getDb } from "./db";
 import { env } from "./env";
 import { newId } from "./ids";
 import { publicChainConfig } from "./public-config";
-import type { MerchantDoc } from "./merchants";
+import { findMerchantById, type MerchantDoc } from "./merchants";
 
 // --- Types -------------------------------------------------------------------
 
-export type PaymentStatus = "created" | "paid" | "expired" | "refunded";
-
-export type PaymentDoc = {
-  _id: string;
-  merchantId: string;
-  onchainPaymentId: Hex;
-  onchainMerchantId: Hex;
-  /** Base units (tUSD8 has 6 decimals), as a string to keep full precision. */
-  amount: string;
-  decimals: number;
-  currency: string;
-  orderId: string | null;
-  description: string | null;
-  metadata: Record<string, string>;
-  /** If set, only this address may pay (e.g. a specific AI agent's wallet). */
-  payer: Address | null;
-  status: PaymentStatus;
-  expiresAt: Date;
-  signature: Hex;
-  successUrl: string | null;
-  cancelUrl: string | null;
-  idempotencyKey: string | null;
-  requestHash: string;
-  createdBlock: string | null;
-  paidBy: Address | null;
-  paidAt: Date | null;
-  fee: string | null;
-  refunded: string;
-  txHash: Hex | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
+export type { PaymentDoc, PaymentStatus } from "@aevify/shared";
 
 export function paymentsCollection() {
   return getDb().collection<PaymentDoc>(COLLECTIONS.payments);
@@ -66,6 +40,7 @@ export function paymentsCollection() {
 let indexes: Promise<unknown> | undefined;
 function ensureIndexes() {
   indexes ??= Promise.all([
+    ensureDeliveryIndexes(),
     paymentsCollection().createIndex({ merchantId: 1, createdAt: -1 }),
     paymentsCollection().createIndex(
       { merchantId: 1, idempotencyKey: 1 },
@@ -78,6 +53,16 @@ function ensureIndexes() {
     throw error;
   });
   return indexes;
+}
+
+/** Indexes for webhook deliveries (also created by the listener). */
+export function ensureDeliveryIndexes() {
+  const deliveries = getDb().collection(COLLECTIONS.webhookDeliveries);
+  return Promise.all([
+    deliveries.createIndex({ eventKey: 1 }, { unique: true }),
+    deliveries.createIndex({ status: 1, nextAttemptAt: 1 }),
+    deliveries.createIndex({ merchantId: 1, createdAt: -1 }),
+  ]);
 }
 
 // --- Input -------------------------------------------------------------------
@@ -278,7 +263,30 @@ export async function syncPayment(doc: PaymentDoc): Promise<PaymentDoc> {
   if (Object.keys(update).length === 0) return doc;
   update.updatedAt = new Date();
   await paymentsCollection().updateOne({ _id: doc._id }, { $set: update });
-  return { ...doc, ...update };
+  const next = { ...doc, ...update };
+  await recordTransitionEvents(doc, next);
+  return next;
+}
+
+/**
+ * Queue webhooks for what changed. The listener records the same events from the chain;
+ * event keys make sure each is delivered once, whoever notices first.
+ */
+async function recordTransitionEvents(before: PaymentDoc, after: PaymentDoc) {
+  const types: WebhookEventType[] = [];
+  if (!before.paidAt && after.paidAt) types.push("payment.paid");
+  if (after.refunded !== before.refunded && after.refunded !== "0") types.push("payment.refunded");
+  if (before.status !== "expired" && after.status === "expired") types.push("payment.expired");
+  if (types.length === 0) return;
+  try {
+    const merchant = await findMerchantById(after.merchantId);
+    const deliveries = getDb().collection(COLLECTIONS.webhookDeliveries);
+    for (const type of types) {
+      await recordPaymentEvent(deliveries as never, { type, payment: after, webhookUrl: merchant?.webhookUrl ?? null, appUrl: env.appUrl() });
+    }
+  } catch (error) {
+    console.warn("[payments] Couldn't record webhook events:", error);
+  }
 }
 
 // --- Output ------------------------------------------------------------------
@@ -291,32 +299,9 @@ export function checkoutUrl(paymentId: string) {
   return `${env.appUrl()}/pay/${paymentId}`;
 }
 
-/** Payment as returned to the merchant (secret key or dashboard). */
+/** Payment as returned to the merchant (secret key or dashboard), and inside webhook events. */
 export function serializePayment(doc: PaymentDoc) {
-  return {
-    id: doc._id,
-    object: "payment",
-    status: doc.status,
-    amount: display(doc.amount, doc.decimals),
-    amountBaseUnits: doc.amount,
-    currency: doc.currency,
-    fee: display(doc.fee, doc.decimals),
-    refunded: display(doc.refunded, doc.decimals),
-    orderId: doc.orderId,
-    description: doc.description,
-    metadata: doc.metadata,
-    payer: doc.payer,
-    paidBy: doc.paidBy,
-    txHash: doc.txHash,
-    checkoutUrl: checkoutUrl(doc._id),
-    onchain: { paymentId: doc.onchainPaymentId, merchantId: doc.onchainMerchantId },
-    successUrl: doc.successUrl,
-    cancelUrl: doc.cancelUrl,
-    expiresAt: iso(doc.expiresAt),
-    paidAt: iso(doc.paidAt),
-    createdAt: iso(doc.createdAt),
-    livemode: false,
-  };
+  return serializePaymentObject(doc, env.appUrl());
 }
 
 export type CheckoutData = Awaited<ReturnType<typeof serializeCheckout>>;

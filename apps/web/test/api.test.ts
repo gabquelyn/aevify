@@ -77,6 +77,9 @@ const healthRoute = await import("@/app/api/health/route");
 const dashboardPaymentRoute = await import("@/app/api/merchant/payments/[id]/route");
 const statsRoute = await import("@/app/api/merchant/stats/route");
 const configRoute = await import("@/app/api/v1/config/route");
+const deliveriesRoute = await import("@/app/api/merchant/webhook-deliveries/route");
+const resendRoute = await import("@/app/api/merchant/webhook-deliveries/[id]/resend/route");
+const testWebhookRoute = await import("@/app/api/merchant/webhooks/test/route");
 const { __fakeDb: fakeDb } = (await import("@/lib/db")) as unknown as { __fakeDb: import("./fake-db").FakeDb };
 
 // --- Helpers -----------------------------------------------------------------
@@ -540,5 +543,153 @@ describe("GET /api/v1/config", () => {
       checkoutAddress: state.checkout,
       token: { symbol: "tUSD8", decimals: 6 },
     });
+  });
+});
+
+describe("webhook events", () => {
+  const deliveries = () => fakeDb.collection("webhook_deliveries").docs as Array<{ type: string; status: string; eventKey: string; payload: string }>;
+
+  it("records payment.paid once when a read sees the payment on-chain", async () => {
+    const { secretKey } = await readyMerchant();
+    signIn();
+    await json(merchantRoute.PATCH!(jsonRequest("/api/merchant", { method: "PATCH", body: { webhookUrl: "https://store.example.com/hook" } })));
+    const p = (await createPayment(secretKey, { amount: "10" })).body;
+    state.payments.set(p.onchain.paymentId, { payer: otherWallet.address, amount: 10_000_000n, fee: 300_000n, refunded: 0n, paidAt: new Date() });
+
+    const get = () => paymentRoute.GET(jsonRequest("/x", { headers: bearer(secretKey) }), params({ id: p.id }));
+    await get();
+    await get();
+    const paid = deliveries().filter((d) => d.type === "payment.paid");
+    expect(paid).toHaveLength(1);
+    expect(paid[0]!.status).toBe("pending");
+    const event = JSON.parse(paid[0]!.payload);
+    expect(event).toMatchObject({ object: "event", type: "payment.paid", data: { object: { id: p.id, status: "paid", fee: "0.30" } } });
+
+    // A partial refund, then the rest: two refund events.
+    state.payments.set(p.onchain.paymentId, { payer: otherWallet.address, amount: 10_000_000n, fee: 300_000n, refunded: 4_000_000n, paidAt: new Date() });
+    await get();
+    state.payments.set(p.onchain.paymentId, { payer: otherWallet.address, amount: 10_000_000n, fee: 300_000n, refunded: 10_000_000n, paidAt: new Date() });
+    await get();
+    await get();
+    expect(deliveries().filter((d) => d.type === "payment.refunded").map((d) => d.eventKey)).toEqual([
+      `payment.refunded:${p.id}:4000000`,
+      `payment.refunded:${p.id}:10000000`,
+    ]);
+  });
+
+  it("records payment.expired, marked no_endpoint when there's no webhook URL", async () => {
+    const { secretKey } = await readyMerchant();
+    const p = (await createPayment(secretKey, { amount: "2" })).body;
+    (fakeDb.collection("payments").docs[0] as { expiresAt: Date }).expiresAt = new Date(Date.now() - 1000);
+    await paymentRoute.GET(jsonRequest("/x", { headers: bearer(secretKey) }), params({ id: p.id }));
+    expect(deliveries()).toEqual([expect.objectContaining({ type: "payment.expired", status: "no_endpoint" })]);
+  });
+});
+
+describe("webhook deliveries in the dashboard", () => {
+  it("queues a test event, lists it, and allows resending once finished", async () => {
+    await readyMerchant();
+    expect((await testWebhookRoute.POST(jsonRequest("/x", { body: {} }))).status).toBe(409); // no URL yet
+    await merchantRoute.PATCH!(jsonRequest("/api/merchant", { method: "PATCH", body: { webhookUrl: "https://store.example.com/hook" } }));
+    expect((await testWebhookRoute.POST(jsonRequest("/x", { body: {} }))).status).toBe(202);
+
+    const list = await json(deliveriesRoute.GET(jsonRequest("/api/merchant/webhook-deliveries")));
+    expect(list.body.data).toEqual([expect.objectContaining({ type: "webhook.test", status: "pending", attempts: 0 })]);
+    const id = list.body.data[0].id;
+
+    expect((await resendRoute.POST(jsonRequest("/x", { body: {} }), params({ id }))).status).toBe(409); // still queued
+    const doc = fakeDb.collection("webhook_deliveries").docs[0] as { status: string; attempts: number };
+    doc.status = "failed";
+    doc.attempts = 8;
+    expect((await resendRoute.POST(jsonRequest("/x", { body: {} }), params({ id }))).status).toBe(200);
+    expect(doc).toMatchObject({ status: "pending", attempts: 0 });
+  });
+});
+
+describe("@aevify/node against the real API routes", () => {
+  /** Routes SDK requests straight to the route handlers, in-process. */
+  const inProcessFetch = (async (input: string | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const request = new Request(url, init);
+    const path = url.pathname;
+    let m: RegExpMatchArray | null;
+    if (path === "/api/v1/payments") return request.method === "POST" ? paymentsRoute.POST(request) : paymentsRoute.GET(request);
+    if ((m = path.match(/^\/api\/v1\/payments\/([^/]+)$/))) return paymentRoute.GET(request, params({ id: decodeURIComponent(m[1]!) }));
+    if ((m = path.match(/^\/api\/v1\/checkout\/([^/]+)$/))) return checkoutRoute.GET(request, params({ id: decodeURIComponent(m[1]!) }));
+    return new Response("not found", { status: 404 });
+  }) as unknown as typeof fetch;
+
+  it("creates, retrieves, lists and reads checkout data", async () => {
+    const { Aevify, InvalidRequestError, AuthenticationError } = await import("../../../packages/node/src/index.ts");
+    const { secretKey } = await readyMerchant();
+    const aevify = new Aevify(secretKey, { baseUrl: "http://localhost:3000", fetch: inProcessFetch, maxRetries: 0 });
+
+    const created = await aevify.payments.create({ amount: "9.99", orderId: "sdk-1", metadata: { source: "sdk" } }, { idempotencyKey: "sdk-order-1" });
+    expect(created).toMatchObject({ object: "payment", amount: "9.99", status: "created", metadata: { source: "sdk" } });
+    // Same idempotency key -> same payment.
+    expect((await aevify.payments.create({ amount: "9.99", orderId: "sdk-1", metadata: { source: "sdk" } }, { idempotencyKey: "sdk-order-1" })).id).toBe(created.id);
+
+    expect((await aevify.payments.retrieve(created.id)).id).toBe(created.id);
+    expect((await aevify.payments.list({ limit: 5 })).data.map((p) => p.id)).toContain(created.id);
+    const checkout = await aevify.payments.retrieveCheckout(created.id);
+    expect(checkout).toMatchObject({ object: "checkout", amount: "9.99" });
+
+    await expect(aevify.payments.create({ amount: "0" })).rejects.toBeInstanceOf(InvalidRequestError);
+    const bad = new Aevify(`sk_test_${"z".repeat(40)}`, { baseUrl: "http://localhost:3000", fetch: inProcessFetch, maxRetries: 0 });
+    await expect(bad.payments.list()).rejects.toBeInstanceOf(AuthenticationError);
+  });
+});
+
+const { checkEmbed, normalizeOrigin } = await import("@/lib/embed");
+const { proxy } = await import("@/proxy");
+const { NextRequest } = await import("next/server");
+const { findMerchantById } = await import("@/lib/merchants");
+
+describe("publishable key roles: embedding the checkout", () => {
+  async function setup() {
+    const { merchant, secretKey } = await readyMerchant();
+    const keys = await json(keysRoute.GET(jsonRequest("/x")));
+    const pk = keys.body.data.find((k: { kind: string }) => k.kind === "publishable").key as string;
+    const payment = (await createPayment(secretKey, { amount: "4" })).body;
+    return { merchantId: merchant.id as string, pk, payment };
+  }
+  const patchOrigins = (allowedOrigins: string[]) =>
+    json(merchantRoute.PATCH!(jsonRequest("/api/merchant", { method: "PATCH", body: { allowedOrigins } })));
+
+  it("normalises allowed domains and rejects unsafe ones", async () => {
+    await setup();
+    const ok = await patchOrigins(["https://Shop.Example.com/", "https://shop.example.com", "http://localhost:5173"]);
+    expect(ok.body.merchant.allowedOrigins).toEqual(["https://shop.example.com", "http://localhost:5173"]);
+    expect((await patchOrigins(["http://shop.example.com"])).status).toBe(400); // http only for localhost
+    expect((await patchOrigins(["https://shop.example.com/checkout"])).status).toBe(400); // origin only
+    expect((await patchOrigins(["javascript:alert(1)"])).status).toBe(400);
+    expect(normalizeOrigin("https://a.b:8443/")).toBe("https://a.b:8443");
+  });
+
+  it("requires the store's own publishable key and an allowed origin", async () => {
+    const a = await setup();
+    const merchant = (await findMerchantById(a.merchantId))!;
+    expect(await checkEmbed(merchant, a.pk, "http://localhost:4000")).toEqual({ ok: true, origin: "http://localhost:4000" }); // dev
+    expect(await checkEmbed(merchant, a.pk, "https://shop.example.com")).toMatchObject({ ok: false, reason: "origin_not_allowed" });
+    await patchOrigins(["https://shop.example.com"]);
+    expect(await checkEmbed((await findMerchantById(a.merchantId))!, a.pk, "https://shop.example.com")).toMatchObject({ ok: true });
+    expect(await checkEmbed(merchant, undefined, "http://localhost:4000")).toMatchObject({ ok: false, reason: "invalid_publishable_key" });
+
+    // A publishable key from another store is refused.
+    signIn("user_other");
+    await createMerchant("Other Store");
+    const otherKeys = await json(keysRoute.GET(jsonRequest("/x")));
+    const otherPk = otherKeys.body.data.find((k: { kind: string }) => k.kind === "publishable").key as string;
+    expect(await checkEmbed(merchant, otherPk, "http://localhost:4000")).toMatchObject({ ok: false, reason: "invalid_publishable_key" });
+  });
+
+  it("sends frame-ancestors: none everywhere, allowed domains for embedded checkout", async () => {
+    const { payment } = await setup();
+    await patchOrigins(["https://shop.example.com"]);
+    const csp = async (path: string) => (await proxy(new NextRequest(`http://localhost:3000${path}`))).headers.get("content-security-policy");
+    expect(await csp("/dashboard")).toBe("frame-ancestors 'none'");
+    expect(await csp(`/pay/${payment.id}`)).toBe("frame-ancestors 'none'");
+    expect(await csp(`/pay/${payment.id}?embed=1`)).toBe("frame-ancestors 'self' https://shop.example.com http://localhost:* http://127.0.0.1:*");
+    expect(await csp("/pay/pay_doesnotexist000000000000?embed=1")).toBe("frame-ancestors 'self'");
   });
 });

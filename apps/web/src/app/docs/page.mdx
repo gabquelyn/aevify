@@ -1,0 +1,45 @@
+export const metadata = { title: "Overview" };
+
+# Aevify documentation
+
+Aevify is a stablecoin checkout for online stores and AI agents. Customers pay in **tUSD8** on
+**QDay Aevum**, payments settle straight to your wallet, and your server finds out through signed
+webhooks. You never handle wallets, gas or contract calls yourself.
+
+> Aevify runs on Aevum **Testnet** for the Aevum Builder Challenge. tUSD8 and tQDAY are test
+> tokens with no value.
+
+## How it works
+
+1. **Your server** creates a payment with your secret key (REST API or `@aevify/node`).
+2. **Your customer** pays on the hosted checkout: a link, a redirect, or a modal from `@aevify/react`.
+3. **The Aevify contract** on Aevum takes the payment and sends 97% straight to your payout wallet. Aevify never holds funds.
+4. **Your server** gets a signed `payment.paid` webhook, verifies it, and fulfils the order.
+
+AI agents pay the same checkout in code, optionally locked so only a specific agent wallet can pay.
+
+## Start here
+
+| | |
+|---|---|
+| [Quickstart](/docs/quickstart) | Your first payment in five minutes |
+| [Accept payments](/docs/accept-payments) | The full server, button and webhook integration |
+| [Hosted checkout](/docs/checkout) | Links, redirects, the embedded modal and allowed domains |
+| [Webhooks](/docs/webhooks) | Events, signatures, retries |
+| [AI agents](/docs/agents) | Paying from code, agent-locked payments, spending policies |
+| [REST API](/docs/api) | Every endpoint |
+
+## Keys at a glance
+
+| Key | Where it lives | What it's for |
+|---|---|---|
+| Secret key `sk_test_…` | Your server only | Creating and reading payments. Shown once; Aevify stores only a hash. |
+| Publishable key `pk_test_…` | Your frontend | Lets `@aevify/react` embed your checkout on your allowed domains |
+| Webhook secret `whsec_…` | Your server | Proves a webhook came from Aevify |
+
+Create them in the [dashboard](/dashboard) under **Developers**.
+
+## Fees
+
+3% per payment, taken by the contract at settlement. The contract can never charge more than 5%,
+not even if Aevify's own admin key changes it.

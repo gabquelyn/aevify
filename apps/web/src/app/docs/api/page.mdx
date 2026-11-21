@@ -1,0 +1,171 @@
+export const metadata = { title: "REST API" };
+
+# REST API
+
+Base URL: your Aevify app, e.g. `https://your-aevify-app.example`. Requests and responses are
+JSON. Amounts are **decimal strings** in tUSD8 (6 decimals), like `"25.00"`, with the exact
+on-chain value in `amountBaseUnits` (`"25000000"`).
+
+## Authentication
+
+Send your secret key as a bearer token:
+
+```
+Authorization: Bearer sk_test_...
+```
+
+Secret keys are for servers only. `GET /api/v1/checkout/:id` and `GET /api/v1/config` are public.
+
+## Errors
+
+```json
+{ "error": { "type": "invalid_request", "message": "amount: must be greater than 0 …", "param": "amount" } }
+```
+
+| Status | `type` | Meaning |
+|---|---|---|
+| 400 | `invalid_request` | Bad input; `param` names the field |
+| 401 | `authentication_required` | Missing, invalid or revoked key |
+| 404 | `not_found` | No such object, or it belongs to another merchant |
+| 409 | `conflict` | e.g. an idempotency key reused with different parameters |
+| 409 | `merchant_not_ready` | Connect a payout wallet first |
+| 502 | `chain_error` | An on-chain step failed; safe to retry |
+| 503 | `service_unavailable` | The server isn't fully configured |
+
+## Create a payment
+
+`POST /api/v1/payments`
+
+```bash
+curl -X POST "$AEVIFY_BASE_URL/api/v1/payments" \
+  -H "Authorization: Bearer $AEVIFY_SECRET_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: order-1042" \
+  -d '{ "amount": "25.00", "orderId": "1042", "description": "Coffee beans" }'
+```
+
+| Field | Type | | |
+|---|---|---|---|
+| `amount` | string | required | Up to 6 decimals; more than 0, at most 1,000,000 |
+| `orderId` | string | | Your reference, up to 128 characters |
+| `description` | string | | Shown at checkout, up to 500 characters |
+| `expiresInSeconds` | integer | | 60 to 3600; default 900. The contract rejects payment after this. |
+| `payer` | address | | Only this wallet may pay (e.g. an AI agent's) |
+| `successUrl` / `cancelUrl` | URL | | Where the hosted checkout sends the customer |
+| `metadata` | object | | Up to 20 string key/value pairs |
+
+**Idempotency:** with an `Idempotency-Key` header, repeating the request returns the original
+payment (`200`, with `Idempotent-Replayed: true`) instead of creating another. The same key with
+different parameters returns `409`.
+
+Returns `201` with a [payment object](#payment-object). Each payment request is signed by Aevify
+(EIP-712), so the amount can't be changed in the browser.
+
+## Retrieve a payment
+
+`GET /api/v1/payments/:id`. The status is refreshed from the contract on every read.
+
+## List payments
+
+`GET /api/v1/payments?limit=20&startingAfter=pay_…`
+
+Newest first. `hasMore` tells you whether there's another page; pass the last ID as `startingAfter`.
+
+```json
+{ "object": "list", "data": [ { "id": "pay_…", "object": "payment" } ], "hasMore": false }
+```
+
+## Payment object
+
+```json
+{
+  "id": "pay_7Hq2…",
+  "object": "payment",
+  "status": "paid",
+  "amount": "25.00",
+  "amountBaseUnits": "25000000",
+  "currency": "tUSD8",
+  "fee": "0.75",
+  "refunded": "0.00",
+  "orderId": "1042",
+  "description": "Coffee beans",
+  "metadata": {},
+  "payer": null,
+  "paidBy": "0x15d3…6A65",
+  "txHash": "0x…",
+  "checkoutUrl": "https://your-aevify-app.example/pay/pay_7Hq2…",
+  "onchain": { "paymentId": "0x…", "merchantId": "0x…" },
+  "successUrl": null,
+  "cancelUrl": null,
+  "expiresAt": "2026-11-22T10:15:00.000Z",
+  "paidAt": "2026-11-22T10:02:41.000Z",
+  "createdAt": "2026-11-22T10:00:00.000Z",
+  "livemode": false
+}
+```
+
+| `status` | Meaning |
+|---|---|
+| `created` | Waiting for payment |
+| `paid` | Paid on Aevum. Partial refunds show in `refunded`. |
+| `refunded` | Fully refunded |
+| `expired` | Not paid before `expiresAt`; can no longer be paid |
+
+## Checkout data
+
+`GET /api/v1/checkout/:id`: **public**, no key, CORS-enabled. Everything needed to pay, and no
+merchant secrets. The hosted checkout and [AI agents](/docs/agents) use it.
+
+```json
+{
+  "id": "pay_7Hq2…",
+  "object": "checkout",
+  "status": "created",
+  "merchant": { "name": "Demo Store", "slug": "demo-store-x1y2z", "verified": true, "payoutAddress": "0x…" },
+  "amount": "25.00",
+  "amountBaseUnits": "25000000",
+  "expiresAt": "…",
+  "chain": { "id": 44005, "name": "QDay Aevum Testnet", "rpcUrl": "https://rpc-test.qday.info", "explorerUrl": "https://explorer-test.qday.info" },
+  "token": { "address": "0x4565…3483", "symbol": "tUSD8", "decimals": 6 },
+  "contractCall": {
+    "address": "0x…",
+    "functionName": "pay",
+    "abi": [],
+    "approve": { "token": "0x4565…3483", "spender": "0x…", "amount": "25000000" },
+    "args": {
+      "request": { "paymentId": "0x…", "merchantId": "0x…", "amount": "25000000", "expiresAt": "1795…", "payer": "0x0000…0000" },
+      "signature": "0x…"
+    }
+  }
+}
+```
+
+## Config
+
+`GET /api/v1/config`: public. The chain, the checkout contract address and the token.
+
+## Health
+
+`GET /api/health`: whether the database is connected, and whether the server's signer and
+operator keys match the deployed contract's roles.
+
+## Dashboard endpoints
+
+The dashboard uses these with the signed-in session cookie. They're listed for completeness;
+use secret-key endpoints from your own code.
+
+| Method | Path | |
+|---|---|---|
+| GET, POST, PATCH | `/api/merchant` | Your business: create, read, update (name, webhook URL, allowed domains) |
+| POST | `/api/merchant/payout-wallet/challenge` | A message for your wallet to sign |
+| POST | `/api/merchant/payout-wallet` | Register or change the payout wallet (changes wait 24 hours) |
+| POST | `/api/merchant/payout-wallet/apply` | Apply a payout change after its delay |
+| GET, POST | `/api/merchant/keys` | List or create API keys |
+| DELETE | `/api/merchant/keys/:id` | Revoke a key |
+| POST | `/api/merchant/webhook-secret` | Rotate the webhook secret |
+| GET, POST | `/api/merchant/payments` | List payments (filter with `status`) or create a payment link |
+| GET | `/api/merchant/payments/:id` | One payment |
+| GET | `/api/merchant/stats` | Totals and a 14-day series |
+| GET | `/api/merchant/webhook-deliveries` | The webhook delivery log |
+| POST | `/api/merchant/webhook-deliveries/:id/resend` | Queue an event again |
+| POST | `/api/merchant/webhooks/test` | Send a `webhook.test` event |

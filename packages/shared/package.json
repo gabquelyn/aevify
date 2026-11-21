@@ -6,7 +6,11 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./webhooks": "./src/webhooks.ts",
+    "./records": "./src/records.ts",
+    "./events": "./src/events.ts",
+    "./testing": "./src/testing/memory-db.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

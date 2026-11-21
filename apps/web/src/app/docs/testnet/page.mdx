@@ -1,0 +1,41 @@
+export const metadata = { title: "Aevum testnet" };
+
+# Aevum testnet
+
+Aevify runs on **QDay Aevum Testnet**, the testnet of the QDay network. Everything here uses test
+tokens with no value.
+
+| | |
+|---|---|
+| Network name | QDay Aevum Testnet |
+| Chain ID | `44005` |
+| RPC | `https://rpc-test.qday.info` |
+| Explorer | [explorer-test.qday.info](https://explorer-test.qday.info) |
+| Gas token | tQDAY |
+| Stablecoin | tUSD8 at `0x456569838f1d43009A91ebA4263147Afd7233483` |
+| Faucet | [faucet.qday.info](https://faucet.qday.info/en) |
+
+## Add the network to your wallet
+
+The hosted checkout adds Aevum to your wallet automatically when you pay. To add it yourself,
+follow [QDay's guide](https://wiki.qday.info/guide/start/add-network), or enter the values above
+as a custom network in MetaMask.
+
+## Get test tokens
+
+- **tQDAY** (for gas): 5 per address every 24 hours from the faucet.
+- **tUSD8** (to pay with): from the faucet, or `/faucet` in the QDay Discord's #faucet channel.
+
+Every wallet that sends transactions needs a little tQDAY: customers paying, merchants refunding
+from their payout wallet, and agents.
+
+## tUSD8 has 6 decimals
+
+Not 18. 1 tUSD8 is `1000000` base units. The API takes and returns decimal strings (`"25.00"`)
+and gives the exact base units separately (`amountBaseUnits`), so you rarely need to convert.
+If you call the contract yourself, use `parseUnits(amount, 6)`.
+
+## Seeing your payments on-chain
+
+Every payment has a `txHash`. Open `https://explorer-test.qday.info/tx/<txHash>` to see the two
+tUSD8 transfers (97% to the merchant, 3% to the fee wallet) and the contract's `PaymentPaid` event.

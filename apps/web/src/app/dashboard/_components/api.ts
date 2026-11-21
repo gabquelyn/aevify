@@ -18,6 +18,7 @@ export type Merchant = {
   };
   webhookUrl: string | null;
   webhookSecret: string;
+  allowedOrigins: string[];
   readyForPayments: boolean;
   createdAt: string;
 };

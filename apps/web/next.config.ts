@@ -1,4 +1,5 @@
 import path from "node:path";
+import createMDX from "@next/mdx";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -9,6 +10,13 @@ const nextConfig: NextConfig = {
   // Workspace packages ship TypeScript source.
   transpilePackages: ["@aevify/shared"],
   poweredByHeader: false,
+  // Docs pages (/docs) are written in MDX.
+  pageExtensions: ["ts", "tsx", "md", "mdx"],
 };
 
-export default nextConfig;
+const withMDX = createMDX({
+  // Plugins by name (required by Turbopack): tables, and heading IDs for #anchor links.
+  options: { remarkPlugins: ["remark-gfm"], rehypePlugins: ["rehype-slug"] },
+});
+
+export default withMDX(nextConfig);

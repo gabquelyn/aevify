@@ -1,0 +1,30 @@
+{
+  "name": "@aevify/listener",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Aevify listener: watches the checkout contract on Aevum, updates payments and delivers signed webhooks.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "test": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.mts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aevify/shared": "*",
+    "mongodb": "^7.9.1",
+    "viem": "^2.58.4"
+  },
+  "devDependencies": {
+    "@aevify/typescript-config": "*",
+    "@types/node": "^22.0.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  }
+}

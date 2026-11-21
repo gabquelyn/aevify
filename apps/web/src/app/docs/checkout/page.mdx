@@ -1,0 +1,72 @@
+export const metadata = { title: "Hosted checkout" };
+
+# Hosted checkout
+
+Every payment has a ready-made checkout page at its `checkoutUrl` (`/pay/pay_…`). You can send
+customers there, redirect to it, or open it in a modal with `@aevify/react`.
+
+## What the customer sees
+
+1. Your business name, with **Verified on Aevum** once your payout wallet is registered on the contract.
+2. The amount, description, order reference and a countdown to the payment's expiry.
+3. **Connect wallet**: any browser wallet (MetaMask and other EIP-6963 wallets). On a phone
+   without a wallet browser, **Open in MetaMask** opens the page in MetaMask's built-in browser.
+4. The wallet switches to Aevum automatically, adding the network if it doesn't know it.
+5. Their balance, checked before anything is sent: not enough tUSD8, no gas, the wrong wallet for
+   an agent-locked payment, or an expired request are all explained in plain words, with a faucet link on testnet.
+6. **Pay**. One step when the token supports EIP-2612 permits (a free signature, then one
+   transaction); otherwise approve, then pay.
+7. A receipt with a link to the transaction, then back to your store.
+
+The customer never types an address or an amount, so they can't get either wrong.
+
+## Three ways to use it
+
+| | How | Best for |
+|---|---|---|
+| Link | Share `checkoutUrl`, or create one in the dashboard (**New payment link**) | Invoices, chat, social |
+| Redirect | Send the customer to `checkoutUrl` from your server | Any backend, no JavaScript needed |
+| Modal | `<AevifyButton>` from `@aevify/react` | Keeping customers on your site |
+
+## Return URLs
+
+Set them when creating the payment:
+
+- **`successUrl`**: after paying, the customer is sent here with `?aevify_payment_id=pay_…`.
+- **`cancelUrl`**: where **Cancel and return** goes.
+
+A return URL alone isn't proof of payment. Confirm with the webhook or `GET /api/v1/payments/:id`.
+
+## Embedding and allowed domains
+
+The modal embeds the checkout in an iframe. Two rules keep that safe, and both use your
+**publishable key**:
+
+1. **The key must match.** The iframe URL carries your publishable key; the checkout refuses to
+   load if the key doesn't belong to the payment's store.
+2. **The site must be allowed.** Only domains listed under **Developers → Allowed domains** may
+   embed your checkout. Browsers enforce this with a `frame-ancestors` security header, so a
+   look-alike site can't wrap your checkout. When Aevify itself runs in development,
+   `http://localhost` always works; on a deployed Aevify, add your local address (e.g.
+   `http://localhost:3000`) to your allowed domains while you build.
+
+Every other Aevify page (including the checkout when not embedded) sends `frame-ancestors 'none'`,
+so it can't be framed at all.
+
+When the checkout can't be embedded, `@aevify/react` shows why and offers to open it in a new tab.
+
+## Embedded messages
+
+If you build your own modal instead of using `@aevify/react`, open
+`/pay/pay_…?embed=1&pk=pk_test_…&origin=https://your-store.com` in an iframe and listen for
+messages. They're only sent to the origin you passed (once it's verified):
+
+```js
+window.addEventListener("message", (event) => {
+  if (event.origin !== "https://your-aevify-app.example") return;
+  const data = event.data;
+  if (data?.source !== "aevify") return;
+  // data.type: "ready" | "resize" (data.height) | "payment.paid" (data.txHash)
+  //          | "payment.cancelled" | "error" (data.reason)
+});
+```

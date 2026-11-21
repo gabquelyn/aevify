@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { isChainConfigured } from "@/lib/chain";
 import { isDatabaseConfigured } from "@/lib/db";
+import { checkEmbed } from "@/lib/embed";
 import { findMerchantById } from "@/lib/merchants";
 import { findPayment, serializeCheckout, syncPayment } from "@/lib/payments";
 import { Checkout } from "./checkout";
@@ -10,13 +11,19 @@ export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-async function load(id: string) {
+async function loadPayment(id: string) {
   if (!isDatabaseConfigured() || !isChainConfigured()) return null;
   const payment = await findPayment(id);
   if (!payment) return undefined;
   const merchant = await findMerchantById(payment.merchantId);
   if (!merchant) return undefined;
-  return serializeCheckout(await syncPayment(payment), merchant);
+  return { payment, merchant };
+}
+
+async function load(id: string) {
+  const found = await loadPayment(id);
+  if (!found) return found;
+  return serializeCheckout(await syncPayment(found.payment), found.merchant);
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -30,9 +37,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 /** The hosted checkout: where `checkoutUrl` sends customers, and what @aevify/react embeds. */
 export default async function PayPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const embed = (await searchParams).embed === "1";
-  const data = await load(id);
-  if (data === undefined) notFound();
+  const query = await searchParams;
+  const embed = query.embed === "1";
+  const found = await loadPayment(id);
+  if (found === undefined) notFound();
+
+  // Embedded (by @aevify/react): the publishable key must match and the parent site must be allowed.
+  let parentOrigin: string | null = null;
+  if (embed && found) {
+    const check = await checkEmbed(found.merchant, typeof query.pk === "string" ? query.pk : undefined, typeof query.origin === "string" ? query.origin : undefined);
+    if (!check.ok) return <EmbedRefused reason={check.reason} />;
+    parentOrigin = check.origin;
+  }
+
+  const data = found ? await serializeCheckout(await syncPayment(found.payment), found.merchant) : null;
   if (data === null) {
     return (
       <main className="flex min-h-dvh items-center justify-center px-6">
@@ -40,5 +58,24 @@ export default async function PayPage({ params, searchParams }: Props) {
       </main>
     );
   }
-  return <Checkout initial={data} embed={embed} />;
+  return <Checkout initial={data} embed={embed} parentOrigin={parentOrigin} />;
+}
+
+const REFUSED: Record<string, string> = {
+  invalid_publishable_key: "The publishable key doesn't belong to this store. Check the key passed to @aevify/react.",
+  origin_not_allowed: "This site isn't in the store's allowed domains. Add it in the Aevify dashboard under Developers → Allowed domains.",
+};
+
+function EmbedRefused({ reason }: { reason: string }) {
+  // Tell the parent page why (no payment details), so @aevify/react can fall back to a new tab.
+  const script = `window.parent!==window&&window.parent.postMessage(${JSON.stringify({ source: "aevify", type: "error", reason })},"*")`;
+  return (
+    <main className="flex min-h-dvh items-center justify-center px-6">
+      <div className="max-w-sm text-center">
+        <p className="font-medium">This checkout can&apos;t be shown here</p>
+        <p className="mt-2 text-sm text-ink-muted">{REFUSED[reason] ?? "Embedding isn't allowed."}</p>
+      </div>
+      <script dangerouslySetInnerHTML={{ __html: script }} />
+    </main>
+  );
 }

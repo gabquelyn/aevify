@@ -41,9 +41,10 @@ jobs:
           done
           docker compose run --rm -T contracts npm run deploy:local
           docker compose run --rm -T -w /app/apps/web -e E2E_RPC_URL=http://chain:8545 contracts npm run test:e2e
+          docker compose run --rm -T -w /app/apps/listener -e E2E_RPC_URL=http://chain:8545 contracts npm run test:e2e
 
       - name: Build
         run: docker compose run --rm -T -w /app contracts npm run build
 
-      - name: Build the production web image
-        run: docker compose build web-prod
+      - name: Build the production images
+        run: docker compose build web-prod listener-prod

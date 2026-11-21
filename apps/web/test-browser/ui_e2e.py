@@ -156,6 +156,36 @@ with sync_playwright() as p:
     check("insufficient balance is explained", bp.get_by_role("button", name="Not enough tUSD8").is_disabled())
     bp.screenshot(path=f"{OUT}/09-checkout-insufficient-mobile.png")
 
+    # ---------------- @aevify/react: the embedded checkout modal ----------------
+    keys = page.evaluate("fetch('/api/merchant/keys').then(r => r.json())")
+    pk = next(k["key"] for k in keys["data"] if k["kind"] == "publishable")
+    p5 = api("/api/v1/payments", "POST", {"amount": "2.00", "description": "Embedded checkout"}, key=secret)
+    e = c.new_page(); e.set_default_timeout(60000)
+    e.goto(f"{APP}/dev/embed?pid={p5['id']}&pk={pk}")
+    e.get_by_role("button", name="Pay with Aevify").click()
+    frame = e.frame_locator("iframe[title='Aevify checkout']")
+    frame.get_by_role("button", name=re.compile("Connect wallet to pay|Pay with Test Wallet")).click()
+    expect(frame.get_by_role("button", name="Pay 2.00 tUSD8")).to_be_visible()
+    e.screenshot(path=f"{OUT}/14-react-modal.png")
+    frame.get_by_role("button", name="Pay 2.00 tUSD8").click()
+    expect(frame.get_by_text("Payment complete")).to_be_visible(timeout=60000)
+    e.screenshot(path=f"{OUT}/15-react-modal-paid.png")
+    expect(e.get_by_test_id("result")).to_have_text(f"paid {p5['id']}")
+    check("@aevify/react modal: onSuccess fires after paying inside the frame", api(f"/api/v1/payments/{p5['id']}", key=secret)["status"] == "paid")
+    expect(e.locator("[data-aevify-checkout]")).to_have_count(0, timeout=10000)
+    check("modal closes itself after success", True)
+
+    e.goto(f"{APP}/dev/embed?pid={p4['id']}&pk=pk_test_{'x' * 32}")
+    e.get_by_role("button", name="Pay with Aevify").click()
+    expect(e.get_by_text("Couldn't open the checkout here")).to_be_visible()
+    check("a publishable key from another store is refused", "error" in e.get_by_test_id("result").inner_text())
+
+    def csp(path):
+        with urllib.request.urlopen(APP + path) as r:
+            return r.headers.get("content-security-policy")
+    check("checkout can't be framed when not embedded", csp(f"/pay/{p4['id']}") == "frame-ancestors 'none'")
+    check("embedded checkout limited to allowed domains", csp(f"/pay/{p4['id']}?embed=1").startswith("frame-ancestors 'self'"))
+
     # ---------------- Merchant: payments list, detail, refund, overview ----------------
     page.goto(APP + "/dashboard/payments")
     expect(page.get_by_text("Single-origin beans, 1kg")).to_be_visible()
@@ -174,7 +204,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(1500)
     page.screenshot(path=f"{OUT}/13-overview.png")
     stats = page.evaluate("fetch('/api/merchant/stats').then(r => r.json())")
-    check("overview stats add up", stats["volume"] == "15.50" and stats["refunded"] == "12.50" and stats["counts"]["refunded"] == 1)
+    check("overview stats add up", stats["volume"] == "17.50" and stats["refunded"] == "12.50" and stats["counts"]["refunded"] == 1)
 
     browser.close()
 

@@ -1,0 +1,97 @@
+export const metadata = { title: "Webhooks" };
+
+# Webhooks
+
+Aevify POSTs an event to your webhook URL whenever a payment changes. Set the URL under
+**Developers → Webhooks** in the dashboard. In production it must be `https://`.
+
+## Events
+
+| Type | When |
+|---|---|
+| `payment.paid` | The payment was paid on Aevum. `paidBy`, `paidAt`, `fee` and `txHash` are set. |
+| `payment.refunded` | You refunded some or all of it. Sent once per refund; `refunded` is the running total, and `status` becomes `refunded` when it's all refunded. |
+| `payment.expired` | Nobody paid before `expiresAt`. It can no longer be paid. |
+| `webhook.test` | Sent by **Send test event** in the dashboard, with a sample payment. |
+
+Each event body:
+
+```json
+{
+  "id": "evt_6xT9…",
+  "object": "event",
+  "type": "payment.paid",
+  "createdAt": "2026-11-22T10:00:05.000Z",
+  "livemode": false,
+  "data": {
+    "object": { "id": "pay_7Hq2…", "object": "payment", "status": "paid", "amount": "25.00", "fee": "0.75", "orderId": "1042", "txHash": "0x…", "...": "…" }
+  }
+}
+```
+
+`data.object` is the same [payment object](/docs/api#payment-object) the API returns, as it was
+when the event happened.
+
+## Headers
+
+| Header | Value |
+|---|---|
+| `Aevify-Signature` | `t=1795300805,v1=5f2b…` |
+| `Aevify-Event-Id` | The event ID, the same on every retry |
+| `Aevify-Event-Type` | e.g. `payment.paid` |
+| `Content-Type` | `application/json` |
+
+## Verifying signatures
+
+`v1` is a hex HMAC-SHA256 of `"<t>.<raw body>"` using your webhook secret (`whsec_…`). Reject the
+request if it doesn't match, or if `t` is more than five minutes old (that stops replays).
+
+With `@aevify/node` this is one call:
+
+```ts
+const event = await aevify.webhooks.constructEvent(rawBody, signatureHeader, process.env.AEVIFY_WEBHOOK_SECRET!);
+```
+
+Use the **raw** request body. Parsing JSON and stringifying it again changes the bytes and
+breaks the signature. In Express, use `express.raw({ type: "application/json" })` on the webhook route:
+
+```ts
+app.post("/aevify/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  try {
+    const event = await constructWebhookEvent(req.body, req.headers["aevify-signature"], process.env.AEVIFY_WEBHOOK_SECRET!);
+    // handle event…
+    res.sendStatus(200);
+  } catch {
+    res.sendStatus(400);
+  }
+});
+```
+
+Without the SDK, compute `HMAC_SHA256(secret, t + "." + rawBody)` as hex and compare it to `v1`
+with a constant-time comparison.
+
+## Retries
+
+Answer with any **2xx** within 10 seconds. Anything else, a timeout or a network error counts as
+a failure, and Aevify retries after 30 seconds, 2 minutes, 10 minutes, 1 hour, 3 hours, 6 hours
+and 12 hours: 8 attempts over about 22 hours. Redirects aren't followed, so use your final URL.
+
+Because of retries, your handler may see the same event twice. Use `event.id` (or
+`Aevify-Event-Id`) to ignore duplicates, and make "mark order paid" idempotent.
+
+## The delivery log
+
+**Developers → Webhook deliveries** shows every event with its status (Queued, Delivered,
+Failed, No URL set), attempts, the last HTTP status or error, and the next retry. **Resend**
+queues an event again; **Send test event** checks your endpoint end to end.
+
+Events that happen while you have no webhook URL are kept as **No URL set**. Add a URL, then
+resend the ones you need.
+
+## Testing locally
+
+Your local server isn't reachable from Aevify's servers. While developing, either:
+
+- run the Aevify stack locally (`docker compose up`): the local listener may deliver to
+  `http://host.docker.internal:4000/…`, or
+- expose your local server with a tunnel and use its https URL.

@@ -19,11 +19,12 @@ checkout contract, and merchants are notified by signed webhook.
 | Checkout contract, tests, deploy scripts | `packages/contracts`, [DEPLOY.md](./DEPLOY.md) | ✅ (deploy to Aevum pending) |
 | MongoDB connection + `/api/health` | `apps/web/src/lib/db.ts` | ✅ |
 | Sign-in (Google + email links via Brevo) | `apps/web/src/lib/auth.ts`, `/signin` | ✅ |
-| Gateway API: payments, keys, payout wallets ([reference](./docs/API.md)) | `apps/web/src/app/api` | ✅ |
+| Gateway API: payments, keys, payout wallets (reference at `/docs/api`) | `apps/web/src/app/api` | ✅ |
 | Merchant dashboard: overview, payments, payment links, refunds, developers, settings | `/dashboard` | ✅ |
 | Hosted checkout (one-step permit or approve + pay, mobile, embeddable) | `/pay/:id` | ✅ |
-| Chain listener and webhooks | `apps/listener` | Planned |
-| `@aevify/react` and `@aevify/node` | `packages/react`, `packages/node` | Planned |
+| Chain listener and signed webhooks (Railway) | `apps/listener` | ✅ |
+| `@aevify/node` (server SDK) and `@aevify/react` (Pay button + modal) | `packages/node`, `packages/react` | ✅ (npm publish pending) |
+| Documentation | `/docs` (`apps/web/src/app/docs`) | ✅ |
 | Demo store and agent purchase | `apps/demo-store` | Planned |
 
 ## Repository layout

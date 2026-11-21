@@ -1,0 +1,128 @@
+export const metadata = { title: "Accept payments" };
+
+# Accept payments
+
+The full integration for a store: create the payment on your server, open the checkout from a
+Pay button, and fulfil the order when the webhook arrives. Examples use Next.js; the same steps
+work with any backend.
+
+```
+Customer clicks Pay
+  → your server: aevify.payments.create()        (secret key)
+  → your page:   <AevifyButton> opens checkout   (publishable key)
+  → customer pays on Aevum
+  → Aevify:      payment.paid webhook → your server verifies it → fulfil the order
+```
+
+## 1. Install
+
+```bash
+npm install @aevify/node @aevify/react
+```
+
+Environment variables on your server:
+
+```bash
+AEVIFY_BASE_URL=https://your-aevify-app.example     # your Aevify deployment
+AEVIFY_SECRET_KEY=sk_test_...
+AEVIFY_WEBHOOK_SECRET=whsec_...
+NEXT_PUBLIC_AEVIFY_PUBLISHABLE_KEY=pk_test_...
+```
+
+In the dashboard, add your store's domain under **Developers → Allowed domains** (localhost
+always works in development), and set your webhook URL.
+
+## 2. Create the payment on your server
+
+Work out the amount on the server, from your own data. Never trust an amount sent by the browser.
+
+```ts
+// app/api/checkout/route.ts
+import { Aevify } from "@aevify/node";
+
+const aevify = new Aevify(process.env.AEVIFY_SECRET_KEY!);
+
+export async function POST(request: Request) {
+  const { orderId } = await request.json();
+  const order = await db.orders.find(orderId); // your data
+
+  const payment = await aevify.payments.create(
+    {
+      amount: order.total,                     // "25.00"
+      orderId: order.id,
+      description: `Order #${order.id}`,
+      successUrl: `https://your-store.com/orders/${order.id}`,
+      cancelUrl: `https://your-store.com/cart`,
+    },
+    { idempotencyKey: `order-${order.id}` },    // a retry returns the same payment
+  );
+
+  await db.orders.update(order.id, { aevifyPaymentId: payment.id });
+  return Response.json({ id: payment.id });
+}
+```
+
+## 3. Add the Pay button
+
+```tsx
+"use client";
+import { AevifyButton } from "@aevify/react";
+
+export function PayButton({ orderId }: { orderId: string }) {
+  return (
+    <AevifyButton
+      publishableKey={process.env.NEXT_PUBLIC_AEVIFY_PUBLISHABLE_KEY!}
+      baseUrl="https://your-aevify-app.example"
+      createPayment={() =>
+        fetch("/api/checkout", { method: "POST", body: JSON.stringify({ orderId }) }).then((r) => r.json())
+      }
+      onSuccess={() => (window.location.href = `/orders/${orderId}`)}
+    >
+      Pay with tUSD8
+    </AevifyButton>
+  );
+}
+```
+
+On desktop the checkout opens in a modal; on phones it redirects to the hosted checkout and back
+to your `successUrl`. See [@aevify/react](/docs/sdk/react) for every option.
+
+`onSuccess` is for the customer's experience only. **Fulfil orders from the webhook** (or after
+checking the payment on your server), never because the browser said it was paid.
+
+## 4. Fulfil on the webhook
+
+```ts
+// app/api/aevify/webhook/route.ts
+import { Aevify, WebhookSignatureError } from "@aevify/node";
+
+const aevify = new Aevify(process.env.AEVIFY_SECRET_KEY!);
+
+export async function POST(request: Request) {
+  const rawBody = await request.text(); // the raw body, exactly as received
+  let event;
+  try {
+    event = await aevify.webhooks.constructEvent(
+      rawBody,
+      request.headers.get("aevify-signature"),
+      process.env.AEVIFY_WEBHOOK_SECRET!,
+    );
+  } catch (error) {
+    if (error instanceof WebhookSignatureError) return new Response("Invalid signature", { status: 400 });
+    throw error;
+  }
+
+  if (event.type === "payment.paid") {
+    const payment = event.data.object;
+    await db.orders.markPaid(payment.orderId, { txHash: payment.txHash }); // make this idempotent
+  }
+  return new Response("ok");
+}
+```
+
+Answer with any 2xx quickly. Aevify retries failures for about 22 hours. See [Webhooks](/docs/webhooks).
+
+## Without JavaScript on the client
+
+Skip the button: redirect the customer to `payment.checkoutUrl` from your server. After paying
+they come back to `successUrl` with `?aevify_payment_id=pay_…` appended.

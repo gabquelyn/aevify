@@ -2,8 +2,8 @@ import Link from "next/link";
 import { Logo } from "./logo";
 
 const NAV = [
-  { href: "#how-it-works", label: "How it works" },
-  { href: "#agents", label: "AI agents" },
+  { href: "/#how-it-works", label: "How it works" },
+  { href: "/#agents", label: "AI agents" },
   { href: "/docs", label: "Docs" },
 ];
 

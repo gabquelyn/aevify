@@ -82,6 +82,13 @@ export async function revokeApiKey(merchantId: string, keyId: string): Promise<b
   return result.modifiedCount === 1;
 }
 
+/** Is this an active publishable key belonging to the merchant? */
+export async function isMerchantPublishableKey(merchantId: string, key: string): Promise<boolean> {
+  if (!/^pk_test_[0-9A-Za-z]{32}$/.test(key)) return false;
+  const found = await apiKeysCollection().findOne({ token: key, kind: "publishable", revokedAt: null });
+  return found?.merchantId === merchantId;
+}
+
 /** The merchant for a secret key, or null if the key is unknown or revoked. */
 export async function authenticateSecretKey(plaintext: string): Promise<MerchantDoc | null> {
   if (!/^sk_test_[0-9A-Za-z]{40}$/.test(plaintext)) return null;

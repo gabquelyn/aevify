@@ -55,9 +55,10 @@ type Phase =
   | { kind: "confirming"; txHash: Hex }
   | { kind: "success"; txHash: Hex | null };
 
-function postToParent(type: string, payload: Record<string, unknown>) {
-  if (typeof window !== "undefined" && window.parent !== window) {
-    window.parent.postMessage({ source: "aevify", type, ...payload }, "*");
+/** Messages for the embedding page (@aevify/react), sent only to its verified origin. */
+function postToParent(parentOrigin: string | null, type: string, payload: Record<string, unknown>) {
+  if (parentOrigin && typeof window !== "undefined" && window.parent !== window) {
+    window.parent.postMessage({ source: "aevify", type, ...payload }, parentOrigin);
   }
 }
 
@@ -81,7 +82,7 @@ function useCountdown(expiresAt: string | null) {
   return { expired: ms <= 0, label: `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`, urgent: secs < 120 };
 }
 
-export function Checkout({ initial, embed }: { initial: CheckoutData; embed: boolean }) {
+export function Checkout({ initial, embed, parentOrigin = null }: { initial: CheckoutData; embed: boolean; parentOrigin?: string | null }) {
   const [data, setData] = useState(initial);
   const [wallets, setWallets] = useState<WalletInfo[] | null>(null);
   const [wallet, setWallet] = useState<Wallet | null>(null);
@@ -94,6 +95,7 @@ export function Checkout({ initial, embed }: { initial: CheckoutData; embed: boo
   const [error, setError] = useState<string | null>(null);
   const countdown = useCountdown(data.expiresAt);
   const redirected = useRef(false);
+  const mainRef = useRef<HTMLElement>(null);
 
   const amount = BigInt(data.amountBaseUnits);
   const { token, chain, contractCall } = data;
@@ -103,9 +105,21 @@ export function Checkout({ initial, embed }: { initial: CheckoutData; embed: boo
   const busy = phase.kind === "connecting" || phase.kind === "working" || phase.kind === "confirming";
 
   useEffect(() => {
-    postToParent("ready", { paymentId: data.id });
+    postToParent(parentOrigin, "ready", { paymentId: data.id });
     void discoverWallets().then(setWallets);
-  }, [data.id]);
+  }, [data.id, parentOrigin]);
+
+  // Let the embedding modal size itself to the content (measured on the content, not the
+  // page, which stretches to the frame).
+  useEffect(() => {
+    const main = mainRef.current;
+    if (!embed || !main) return;
+    const report = () => postToParent(parentOrigin, "resize", { paymentId: data.id, height: Math.ceil(main.getBoundingClientRect().height) });
+    const observer = new ResizeObserver(report);
+    observer.observe(main);
+    report();
+    return () => observer.disconnect();
+  }, [embed, parentOrigin, data.id]);
 
   const refresh = useCallback(async () => {
     const res = await fetch(`/api/v1/checkout/${data.id}`, { cache: "no-store" });
@@ -250,7 +264,7 @@ export function Checkout({ initial, embed }: { initial: CheckoutData; embed: boo
         await new Promise((r) => setTimeout(r, 1000));
       }
       setPhase({ kind: "success", txHash: hash });
-      postToParent("payment.paid", { paymentId: data.id, txHash: hash });
+      postToParent(parentOrigin, "payment.paid", { paymentId: data.id, txHash: hash });
     } catch (e) {
       setError(friendlyError(e));
       setPhase({ kind: "idle" });
@@ -259,7 +273,7 @@ export function Checkout({ initial, embed }: { initial: CheckoutData; embed: boo
   }
 
   function cancel() {
-    postToParent("payment.cancelled", { paymentId: data.id });
+    postToParent(parentOrigin, "payment.cancelled", { paymentId: data.id });
     if (!embed && data.cancelUrl) window.location.href = data.cancelUrl;
   }
 
@@ -286,10 +300,16 @@ export function Checkout({ initial, embed }: { initial: CheckoutData; embed: boo
   }, [wallet, payerLocked, insufficient, token.symbol, data.amount, busy]);
 
   return (
-    <main className={`relative isolate flex min-h-dvh items-start justify-center px-4 sm:items-center ${embed ? "py-4" : "py-10"}`}>
+    <main ref={mainRef} className={`relative isolate flex items-start justify-center ${embed ? "px-1 pb-4 pt-2" : "min-h-dvh px-4 py-10 sm:items-center"}`}>
       {!embed && <div className="bg-dot-grid mask-fade-edges absolute inset-0 -z-10" aria-hidden="true" />}
       <div className="w-full max-w-[420px]">
-        <section className="overflow-hidden rounded-3xl border border-line bg-surface shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.12)]">
+        <section
+          className={
+            embed
+              ? "overflow-hidden bg-surface" // the modal around it is the card
+              : "overflow-hidden rounded-3xl border border-line bg-surface shadow-[0_1px_2px_rgba(15,23,42,0.04),0_12px_32px_-12px_rgba(15,23,42,0.12)]"
+          }
+        >
           {/* Merchant and amount */}
           <div className="border-b border-line px-6 pb-6 pt-6">
             <div className="flex items-center justify-between gap-3">

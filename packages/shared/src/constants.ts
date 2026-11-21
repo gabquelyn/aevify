@@ -21,27 +21,6 @@ export const TUSD8 = {
 export const FEE_BPS = 300;
 export const MAX_FEE_BPS = 500;
 
-/** Lifecycle of a payment request. */
-export const PAYMENT_STATUSES = [
-  "created", // request exists, nobody has paid yet
-  "pending", // a payment transaction was seen but is not yet confirmed
-  "paid", // confirmed on Aevum
-  "expired", // nobody paid before the expiry time
-  "refunded", // merchant refunded the payment on-chain
-] as const;
-export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
-
-/** Who paid: a person through the checkout, or an AI agent in code. */
-export type PayerKind = "human" | "agent";
-
-/** Events delivered to merchants as signed webhooks. */
-export const WEBHOOK_EVENTS = [
-  "payment.paid",
-  "payment.expired",
-  "payment.refunded",
-] as const;
-export type WebhookEventType = (typeof WEBHOOK_EVENTS)[number];
-
 /** Convert a human amount like "25.00" into tUSD8 base units (6 decimals). */
 export function toBaseUnits(amount: string, decimals: number = TUSD8.decimals): bigint {
   const trimmed = amount.trim();

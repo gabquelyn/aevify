@@ -1,0 +1,8 @@
+{
+  "extends": "@aevify/typescript-config/base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "include": ["src", "test", "test-e2e", "tsup.config.ts", "vitest.config.mts", "vitest.e2e.config.mts"]
+}

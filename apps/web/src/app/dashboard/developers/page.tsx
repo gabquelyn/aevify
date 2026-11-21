@@ -11,7 +11,9 @@ export default function DevelopersPage() {
       <PageHeader title="Developers" description="API keys, webhooks and a quick start for your server." />
       <div className="space-y-6">
         <ApiKeys />
+        <AllowedDomains />
         <Webhooks />
+        <Deliveries />
         <QuickStart />
       </div>
     </>
@@ -183,6 +185,174 @@ function QuickStart() {
       <p className="mt-3 text-sm text-ink-muted">
         The response includes <code className="font-mono text-xs">checkoutUrl</code>. Full reference: <code className="font-mono text-xs">docs/API.md</code>.
       </p>
+    </Card>
+  );
+}
+
+type Delivery = {
+  id: string;
+  type: string;
+  paymentId: string | null;
+  status: "pending" | "sending" | "succeeded" | "failed" | "no_endpoint";
+  attempts: number;
+  lastStatusCode: number | null;
+  lastError: string | null;
+  nextAttemptAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+};
+
+const DELIVERY_STATUS: Record<Delivery["status"], { label: string; className: string }> = {
+  pending: { label: "Queued", className: "border-amber-200 bg-amber-50 text-status-pending" },
+  sending: { label: "Sending", className: "border-amber-200 bg-amber-50 text-status-pending" },
+  succeeded: { label: "Delivered", className: "border-green-200 bg-green-50 text-status-paid" },
+  failed: { label: "Failed", className: "border-red-200 bg-red-50 text-status-failed" },
+  no_endpoint: { label: "No URL set", className: "border-line bg-surface-muted text-ink-muted" },
+};
+
+function Deliveries() {
+  const { merchant } = useDashboard();
+  const [items, setItems] = useState<Delivery[] | null>(null);
+  const [message, setMessage] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+
+  const load = useCallback(async () => {
+    setItems((await api<{ data: Delivery[] }>("/api/merchant/webhook-deliveries?limit=15")).data);
+  }, []);
+
+  useEffect(() => {
+    void load().catch(() => setItems([]));
+    // Refresh while anything is in flight.
+    const t = setInterval(() => void load().catch(() => undefined), 5000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  async function sendTest() {
+    setMessage(null);
+    try {
+      await api("/api/merchant/webhooks/test", { method: "POST" });
+      setMessage({ tone: "success", text: "Test event queued. It appears below once the listener sends it." });
+      await load();
+    } catch (e) {
+      setMessage({ tone: "error", text: (e as Error).message });
+    }
+  }
+
+  async function resend(id: string) {
+    try {
+      await api(`/api/merchant/webhook-deliveries/${id}/resend`, { method: "POST" });
+      await load();
+    } catch (e) {
+      setMessage({ tone: "error", text: (e as Error).message });
+    }
+  }
+
+  return (
+    <Card
+      title="Webhook deliveries"
+      subtitle="Every event Aevify sends, with retries over about 22 hours if your server doesn't answer with 2xx."
+      action={
+        <SecondaryButton onClick={sendTest} disabled={!merchant.webhookUrl} title={merchant.webhookUrl ? undefined : "Add a webhook URL first"}>
+          Send test event
+        </SecondaryButton>
+      }
+    >
+      {message && (
+        <div className="mb-4">
+          <Banner tone={message.tone}>{message.text}</Banner>
+        </div>
+      )}
+      {items === null ? (
+        <Spinner />
+      ) : items.length === 0 ? (
+        <p className="text-sm text-ink-muted">No events yet. They appear here when payments are paid, refunded or expire.</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {items.map((d) => {
+            const s = DELIVERY_STATUS[d.status];
+            return (
+              <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 text-sm">
+                    <span className="font-mono text-xs">{d.type}</span>
+                    <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${s.className}`}>{s.label}</span>
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-ink-muted">
+                    {formatDate(d.createdAt)} · {d.attempts} attempt{d.attempts === 1 ? "" : "s"}
+                    {d.lastStatusCode !== null && ` · HTTP ${d.lastStatusCode}`}
+                    {d.lastError && ` · ${d.lastError}`}
+                    {d.nextAttemptAt && d.attempts > 0 && ` · retrying ${formatDate(d.nextAttemptAt)}`}
+                  </p>
+                </div>
+                {(d.status === "failed" || d.status === "succeeded" || d.status === "no_endpoint") && (
+                  <button onClick={() => resend(d.id)} className="text-xs font-medium text-brand-600 hover:underline">
+                    Resend
+                  </button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/** The publishable key only works for checkouts embedded on these sites (and localhost in development). */
+function AllowedDomains() {
+  const { merchant, setMerchant } = useDashboard();
+  const [draft, setDraft] = useState("");
+  const [status, setStatus] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+  const origins = merchant.allowedOrigins;
+
+  async function save(next: string[], message: string) {
+    setStatus(null);
+    try {
+      setMerchant((await api<{ merchant: Merchant }>("/api/merchant", { method: "PATCH", json: { allowedOrigins: next } })).merchant);
+      setStatus({ tone: "success", text: message });
+      return true;
+    } catch (e) {
+      setStatus({ tone: "error", text: (e as Error).message });
+      return false;
+    }
+  }
+
+  async function add(e: React.FormEvent) {
+    e.preventDefault();
+    const value = draft.trim();
+    if (!value) return;
+    if (await save([...origins, value], `${value} can now embed your checkout.`)) setDraft("");
+  }
+
+  return (
+    <Card
+      title="Allowed domains"
+      subtitle="Sites allowed to embed your checkout with @aevify/react and your publishable key. Browsers block every other site from framing it."
+    >
+      {origins.length > 0 ? (
+        <ul className="mb-4 divide-y divide-line rounded-xl border border-line">
+          {origins.map((o) => (
+            <li key={o} className="flex items-center justify-between px-4 py-2.5">
+              <span className="font-mono text-sm">{o}</span>
+              <button onClick={() => save(origins.filter((x) => x !== o), `${o} removed.`)} className="text-xs text-ink-muted hover:text-status-failed">
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mb-4 text-sm text-ink-muted">No domains yet. In development, http://localhost always works.</p>
+      )}
+      <form onSubmit={add} className="flex flex-col gap-3 sm:flex-row">
+        <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="https://your-store.com" className={inputClass} aria-label="Domain to allow" />
+        <SecondaryButton type="submit" disabled={!draft.trim()}>
+          Add domain
+        </SecondaryButton>
+      </form>
+      {status && (
+        <div className="mt-3">
+          <Banner tone={status.tone}>{status.text}</Banner>
+        </div>
+      )}
     </Card>
   );
 }

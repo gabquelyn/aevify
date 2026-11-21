@@ -1,0 +1,97 @@
+export const metadata = { title: "@aevify/node" };
+
+# @aevify/node
+
+The server SDK: create and read payments, and verify webhooks. TypeScript types included, no
+dependencies. Runs on Node 20+, Bun, Deno and edge runtimes (it uses `fetch` and Web Crypto).
+
+```bash
+npm install @aevify/node
+```
+
+## Setup
+
+```ts
+import { Aevify } from "@aevify/node";
+
+const aevify = new Aevify(process.env.AEVIFY_SECRET_KEY!, {
+  baseUrl: process.env.AEVIFY_BASE_URL, // your Aevify app's URL; defaults to AEVIFY_BASE_URL
+});
+```
+
+| Option | Default | |
+|---|---|---|
+| `baseUrl` | `AEVIFY_BASE_URL` env var | Required one way or the other |
+| `timeoutMs` | `30000` | Per request |
+| `maxRetries` | `2` | For network errors, 429 and 5xx |
+| `fetch` | global `fetch` | Bring your own (tests, proxies) |
+
+It refuses to run in a browser and rejects publishable keys, so a secret key can't end up in front of customers.
+
+## Payments
+
+```ts
+// Create. An idempotency key is always sent (generated if you don't pass one), so retries are safe.
+const payment = await aevify.payments.create(
+  { amount: "25.00", orderId: "1042", successUrl: "https://shop.example/thanks" },
+  { idempotencyKey: "order-1042" },
+);
+
+// Retrieve (refreshed from the chain)
+const latest = await aevify.payments.retrieve(payment.id);
+
+// List, newest first
+const page = await aevify.payments.list({ limit: 20 });
+const next = await aevify.payments.list({ limit: 20, startingAfter: page.data.at(-1)!.id });
+
+// Or iterate over everything
+for await (const p of aevify.payments.listAll()) console.log(p.id, p.status);
+
+// Public checkout data: what an AI agent needs to pay (no key used)
+const checkout = await aevify.payments.retrieveCheckout(payment.id);
+```
+
+`create` takes the same fields as [`POST /api/v1/payments`](/docs/api#create-a-payment):
+`amount` (required), `orderId`, `description`, `expiresInSeconds`, `payer`, `successUrl`,
+`cancelUrl`, `metadata`.
+
+## Webhooks
+
+```ts
+const event = await aevify.webhooks.constructEvent(rawBody, signatureHeader, process.env.AEVIFY_WEBHOOK_SECRET!);
+// or, without a client:
+import { constructWebhookEvent } from "@aevify/node";
+const event2 = await constructWebhookEvent(rawBody, signatureHeader, secret, { toleranceSeconds: 300 });
+```
+
+`rawBody` can be a string, `Uint8Array` or `ArrayBuffer`. It throws `WebhookSignatureError` if
+the signature is missing, wrong or too old. See [Webhooks](/docs/webhooks).
+
+## Errors
+
+Every API error is an `AevifyError` with `type`, `status` and (for bad input) `param`:
+
+| Class | When |
+|---|---|
+| `InvalidRequestError` | 400: bad input; `param` names the field |
+| `AuthenticationError` | 401: missing, invalid or revoked key |
+| `NotFoundError` | 404 |
+| `ConflictError` | 409: e.g. an idempotency key reused with different parameters |
+| `MerchantNotReadyError` | Connect a payout wallet in the dashboard first |
+| `APIError` | Other server errors (after retries) |
+| `ConnectionError` | Couldn't reach Aevify, or timed out (after retries) |
+
+```ts
+import { InvalidRequestError } from "@aevify/node";
+
+try {
+  await aevify.payments.create({ amount: "0" });
+} catch (error) {
+  if (error instanceof InvalidRequestError) console.log(error.param, error.message);
+}
+```
+
+## Types
+
+`Payment`, `PaymentStatus`, `CreatePaymentParams`, `PaymentList`, `WebhookEvent` and
+`WebhookEventType` are exported for your own code.

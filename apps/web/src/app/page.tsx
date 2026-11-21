@@ -123,6 +123,13 @@ export default function HomePage() {
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-10 text-sm text-ink-muted sm:flex-row sm:items-center sm:justify-between">
           <Logo />
+          <nav className="flex flex-wrap gap-x-6 gap-y-2" aria-label="Footer">
+            <Link href="/docs" className="hover:text-ink">Docs</Link>
+            <Link href="/docs/quickstart" className="hover:text-ink">Quickstart</Link>
+            <Link href="/docs/api" className="hover:text-ink">API reference</Link>
+            <Link href="/docs/agents" className="hover:text-ink">AI agents</Link>
+            <Link href="/dashboard" className="hover:text-ink">Dashboard</Link>
+          </nav>
           <p>Built on QDay Aevum Testnet · Test tokens only</p>
         </div>
       </footer>

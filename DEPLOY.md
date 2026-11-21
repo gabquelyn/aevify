@@ -417,6 +417,64 @@ repository root.
 
 ---
 
+# D. Listener → Railway
+
+The listener watches the contract for payments and refunds, expires unpaid payments, and sends
+webhooks. Without it, payments still settle on-chain and show as paid when someone opens them,
+but merchants get **no webhooks**. Run exactly one listener per contract.
+
+1. In Railway: **New Project → Deploy from GitHub repo**, and pick this repository.
+2. In the service's **Settings**:
+
+   | Setting | Value |
+   |---|---|
+   | Root Directory | leave empty (the build needs the whole repository) |
+   | Builder | Dockerfile |
+   | Dockerfile Path | `apps/listener/Dockerfile` |
+   | Healthcheck Path | `/health` |
+
+   Railway sets `PORT` itself; the listener uses it.
+3. Variables:
+
+   | Variable | Value |
+   |---|---|
+   | `MONGODB_URI`, `MONGODB_DB` | The same database as Vercel |
+   | `AEVUM_RPC_URL`, `AEVUM_CHAIN_ID` | `https://rpc-test.qday.info`, `44005` |
+   | `AEVIFY_CHECKOUT_ADDRESS` | From step 8 |
+   | `NEXT_PUBLIC_APP_URL` | Your Vercel URL (used for `checkoutUrl` in webhook payloads) |
+   | `LISTENER_START_BLOCK` | The contract's deployment block (from the explorer). Only read on the very first start. |
+
+   The listener needs **no private keys**. Optional tuning: `LISTENER_POLL_MS` (3000),
+   `LISTENER_CONFIRMATIONS` (1), `LISTENER_BATCH_BLOCKS` (2000).
+4. Deploy. The logs show `listener started`; `https://<railway-domain>/health` reports the last
+   scanned block and the chain head. In the dashboard, **Developers → Send test event** checks
+   webhooks end to end.
+
+---
+
+# E. Publish the npm packages
+
+`@aevify/node` and `@aevify/react` are published from GitHub Actions
+(`.github/workflows/publish.yml`).
+
+1. On npmjs.com, create the **aevify** organization (free for public packages), or change the
+   package names to a scope you own.
+2. Create an **Automation** access token and add it to GitHub: Settings → Secrets and variables →
+   Actions → `NPM_TOKEN`.
+3. Set `repository.url` in both `package.json` files to your GitHub repository (needed for
+   provenance).
+4. Bump the version in `packages/node/package.json` and/or `packages/react/package.json`, commit,
+   then tag and push:
+
+   ```bash
+   git tag v0.1.0 && git push origin v0.1.0
+   ```
+
+The workflow tests and builds both packages, then publishes any version not yet on npm.
+To try it locally first: `docker compose run --rm contracts npm pack -w @aevify/node --dry-run`.
+
+---
+
 ## Troubleshooting
 
 | Problem | Fix |

@@ -1,0 +1,89 @@
+export const metadata = { title: "@aevify/react" };
+
+# @aevify/react
+
+A Pay button and checkout modal for React 18+ (Next.js App Router included). It's about 10 KB
+with no wallet libraries: the wallet and payment logic live on Aevify's hosted checkout, which
+this package opens.
+
+```bash
+npm install @aevify/react
+```
+
+Before you start, add your site under **Developers → Allowed domains** in the dashboard
+(`http://localhost` works without that in development).
+
+## AevifyButton
+
+```tsx
+import { AevifyButton } from "@aevify/react";
+
+<AevifyButton
+  publishableKey="pk_test_..."
+  baseUrl="https://your-aevify-app.example"
+  createPayment={async () => {
+    const res = await fetch("/api/checkout", { method: "POST" });
+    return (await res.json()).id;           // the pay_... ID from your server
+  }}
+  onSuccess={({ paymentId, txHash }) => router.push(`/thanks?payment=${paymentId}`)}
+  onCancel={() => console.log("closed")}
+  onError={(error) => console.error(error)}
+>
+  Pay with tUSD8
+</AevifyButton>
+```
+
+| Prop | | |
+|---|---|---|
+| `publishableKey` | required | `pk_test_…`. A secret key here is refused. |
+| `baseUrl` | required | Your Aevify app's URL |
+| `createPayment` | one of these two | Called on click; return the payment ID (or an object with `id`) |
+| `paymentId` | | An existing payment ID |
+| `mode` | `"auto"` | `"auto"`: modal on desktop, redirect on phones. Or `"modal"` / `"redirect"`. |
+| `onSuccess` | | `({ paymentId, txHash })` after the customer pays |
+| `onCancel` | | `({ paymentId })` when they close without paying |
+| `onError` | | Configuration problems, or the checkout couldn't be embedded |
+| `className`, `style`, `disabled`, `children` | | Styling. Passing `className` removes the default styles. |
+
+In redirect mode the customer returns to the `successUrl` / `cancelUrl` you set when creating
+the payment.
+
+## AevifyCheckout
+
+The modal on its own, for full control:
+
+```tsx
+import { AevifyCheckout } from "@aevify/react";
+
+const [open, setOpen] = useState(false);
+
+<AevifyCheckout
+  publishableKey="pk_test_..."
+  baseUrl="https://your-aevify-app.example"
+  paymentId={paymentId}
+  open={open}
+  onClose={() => setOpen(false)}
+  onSuccess={handlePaid}
+  closeOnSuccess={true}   // default: closes 2 seconds after payment
+/>
+```
+
+## Behaviour
+
+- **Size:** the modal resizes to the checkout's content. Escape, the ✕ button or clicking the
+  backdrop closes it (and calls `onCancel` if unpaid).
+- **Security:** it only trusts messages from your Aevify `baseUrl` origin, from the frame it
+  opened, about the payment it opened.
+- **If embedding fails** (a domain that isn't allowed, a key from another store, or the page
+  takes more than 12 seconds), the modal says why and offers to open the checkout in a new tab.
+- **Fulfilment:** `onSuccess` is for the customer's experience. Fulfil orders from the
+  [webhook](/docs/webhooks).
+
+## Helpers
+
+```ts
+import { checkoutUrl } from "@aevify/react";
+
+checkoutUrl({ publishableKey, baseUrl }, "pay_123");                  // hosted page
+checkoutUrl({ publishableKey, baseUrl }, "pay_123", { embed: true, origin: location.origin });
+```

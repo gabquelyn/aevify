@@ -21,6 +21,8 @@ export type MerchantDoc = {
   payoutChallenge: { address: Address; message: string; expiresAt: Date } | null;
   webhookUrl: string | null;
   webhookSecret: string;
+  /** Sites allowed to embed this merchant's checkout (exact origins, e.g. "https://shop.example"). */
+  allowedOrigins?: string[];
   createdAt: Date;
   updatedAt: Date;
 };
@@ -71,6 +73,7 @@ export async function createMerchant(userId: string, name: string): Promise<Merc
       payoutChallenge: null,
       webhookUrl: null,
       webhookSecret: newSecret.webhookSecret(),
+      allowedOrigins: [],
       createdAt: now,
       updatedAt: now,
     };
@@ -136,6 +139,7 @@ export function serializeMerchant(doc: MerchantDoc) {
       lastTxHash: doc.lastTxHash,
     },
     webhookUrl: doc.webhookUrl,
+    allowedOrigins: doc.allowedOrigins ?? [],
     webhookSecret: doc.webhookSecret,
     readyForPayments: doc.onchainStatus === "registered" && Boolean(doc.payoutAddress),
     createdAt: doc.createdAt.toISOString(),

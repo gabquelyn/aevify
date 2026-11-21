@@ -4,6 +4,7 @@ import { requireSession, requireSessionMerchant } from "@/lib/api-auth";
 import { createApiKey } from "@/lib/api-keys";
 import { env } from "@/lib/env";
 import { apiError, handle, readJson, validationError } from "@/lib/http";
+import { normalizeOrigin } from "@/lib/embed";
 import { createMerchant, serializeMerchant, syncMerchantFromChain, updateMerchant } from "@/lib/merchants";
 
 export const dynamic = "force-dynamic";
@@ -44,13 +45,29 @@ const webhookUrlSchema = z
     return !env.isProduction() && url.protocol === "http:" && ["localhost", "127.0.0.1"].includes(url.hostname);
   }, "must be an https:// URL (http://localhost is allowed in development)");
 
-/** PATCH /api/merchant { name?, webhookUrl? }: update the business profile. */
+const allowedOriginsSchema = z
+  .array(z.string().max(200))
+  .max(10, "at most 10 domains")
+  .transform((list, ctx) => {
+    const out: string[] = [];
+    for (const item of list) {
+      const origin = normalizeOrigin(item);
+      if (!origin) {
+        ctx.addIssue({ code: "custom", message: `"${item}" isn't a valid origin. Use https://your-store.com (http only for localhost).` });
+        return z.NEVER;
+      }
+      if (!out.includes(origin)) out.push(origin);
+    }
+    return out;
+  });
+
+/** PATCH /api/merchant { name?, webhookUrl?, allowedOrigins? }: update the business profile. */
 export const PATCH = handle(async (request: Request) => {
   const auth = await requireSessionMerchant(request);
   if (auth instanceof Response) return auth;
 
   const parsed = z
-    .object({ name: nameSchema.optional(), webhookUrl: webhookUrlSchema.nullable().optional() })
+    .object({ name: nameSchema.optional(), webhookUrl: webhookUrlSchema.nullable().optional(), allowedOrigins: allowedOriginsSchema.optional() })
     .strict()
     .safeParse(await readJson(request));
   if (!parsed.success) return validationError(parsed.error);

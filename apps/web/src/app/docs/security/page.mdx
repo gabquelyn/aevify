@@ -1,0 +1,59 @@
+export const metadata = { title: "Security" };
+
+# Security
+
+What protects merchants and customers, and where each protection lives. Rules enforced by the
+contract hold even if Aevify's servers are compromised.
+
+## On-chain (the AevifyCheckout contract)
+
+| Protection | How |
+|---|---|
+| Amounts can't be tampered with | Every payment request is signed by Aevify (EIP-712). Change the amount, merchant or expiry and the contract rejects it. |
+| No double payments | Each payment ID can be paid once. |
+| No stale payments | Requests expire; the contract rejects payment after `expiresAt`. |
+| Agent-only payments | A request with `payer` set can only be paid by that wallet. |
+| Fee ceiling | The fee (3%) can never exceed 5%, not even if the owner tries. |
+| Non-custodial | Funds go straight from the payer to the merchant's wallet. The contract never holds them. |
+| Hijacked accounts can't redirect payouts instantly | Changing a payout wallet takes 24 hours, and the current payout wallet can cancel the change. |
+| Refunds go back to the payer | Refunds come from the merchant's wallet, only to the original payer, never more than was paid. |
+| Emergency stop | The operator or owner can pause new payments. Refunds keep working while paused; only the owner can unpause. |
+| No locked-out admin | Ownership moves in two steps and can't be renounced. |
+
+## Keys
+
+- **Secret keys** are shown once and stored only as SHA-256 hashes. Revoking one takes effect
+  immediately. At most 5 can be active at a time.
+- **Publishable keys** can't read or create payments. They only let your allowed domains embed your checkout.
+- **`@aevify/node` refuses to run in a browser**, and `@aevify/react` refuses secret keys.
+- **Aevify's own server keys are limited.** The signer key only signs payment requests and the
+  operator key only registers merchants. Neither can move funds or change fees; those need the
+  owner key, which never goes on a server.
+
+## Payout wallets
+
+Connecting a payout wallet requires signing a one-time message with that wallet. That proves you
+control it, so a typo can't send your money to a stranger.
+
+## The checkout
+
+- **No framing by default:** every page sends `frame-ancestors 'none'` (clickjacking protection).
+- **Embedding needs your key and your domains:** the embedded checkout requires your publishable
+  key and only loads inside your allowed domains, enforced by the browser.
+- **Targeted messages:** they're sent only to the verified parent origin, and `@aevify/react`
+  accepts them only from your Aevify origin and its own frame.
+- **Checks before signing:** contract errors are caught in a simulation before the wallet asks
+  the customer to sign anything.
+
+## Webhooks
+
+- **Signed:** HMAC-SHA256 over the timestamp and raw body. Events older than 5 minutes are
+  rejected, which prevents replays.
+- **No internal URLs:** in production the sender refuses webhook URLs that are plain http or
+  resolve to private or internal network addresses (SSRF protection), and never follows redirects.
+- **Rotatable:** you can rotate the signing secret at any time from the dashboard.
+
+## Reporting a problem
+
+Aevify is a hackathon project on testnet. Please report security issues privately to the
+maintainers rather than opening a public issue.

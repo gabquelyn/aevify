@@ -1,5 +1,5 @@
 import { MongoClient, type Db } from "mongodb";
-import { MemoryDb } from "./testing/memory-db";
+import { MemoryDb } from "@aevify/shared/testing";
 
 /**
  * MongoDB access for the web app and API. Server-side only.
@@ -14,6 +14,7 @@ export const COLLECTIONS = {
   apiKeys: "api_keys",
   payments: "payments",
   webhookDeliveries: "webhook_deliveries",
+  listenerState: "listener_state",
 } as const;
 
 declare global {

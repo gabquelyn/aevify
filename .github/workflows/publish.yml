@@ -1,0 +1,36 @@
+name: Publish packages
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - run: npx turbo run typecheck test build --filter=@aevify/node --filter=@aevify/react
+      - name: Publish versions not yet on npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          for pkg in node react; do
+            name=$(node -p "require('./packages/$pkg/package.json').name")
+            version=$(node -p "require('./packages/$pkg/package.json').version")
+            if npm view "$name@$version" version >/dev/null 2>&1; then
+              echo "$name@$version is already published; skipping"
+            else
+              npm publish -w "packages/$pkg" --access public --provenance
+            fi
+          done
