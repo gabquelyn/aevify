@@ -1,0 +1,8 @@
+{
+  "AevifyCheckoutModule": {
+    "token": "0x456569838f1d43009A91ebA4263147Afd7233483",
+    "signer": "0x951804655e4974BE913f024C62425A4dA7438c88",
+    "operator": "0xf5FE686D6De2C5E068Bf060199bdBd529403Ec35",
+    "feeBps": 300
+  }
+}
