@@ -445,7 +445,7 @@ but merchants get **no webhooks**. Run exactly one listener per contract.
    | `LISTENER_START_BLOCK` | The contract's deployment block (from the explorer). Only read on the very first start. |
 
    The listener needs **no private keys**. Optional tuning: `LISTENER_POLL_MS` (3000),
-   `LISTENER_CONFIRMATIONS` (1), `LISTENER_BATCH_BLOCKS` (2000).
+   `LISTENER_CONFIRMATIONS` (1), `LISTENER_BATCH_BLOCKS` (1000).
 4. Deploy. The logs show `listener started`; `https://<railway-domain>/health` reports the last
    scanned block and the chain head. In the dashboard, **Developers → Send test event** checks
    webhooks end to end.

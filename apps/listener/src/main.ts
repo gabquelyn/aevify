@@ -26,7 +26,7 @@ const config = {
   appUrl: (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000").replace(/\/$/, ""),
   pollMs: Number(process.env.LISTENER_POLL_MS ?? 3000),
   confirmations: Number(process.env.LISTENER_CONFIRMATIONS ?? 1),
-  batchBlocks: Number(process.env.LISTENER_BATCH_BLOCKS ?? 2000),
+  batchBlocks: Number(process.env.LISTENER_BATCH_BLOCKS ?? 1000),
   startBlock: process.env.LISTENER_START_BLOCK ? BigInt(process.env.LISTENER_START_BLOCK) : undefined,
   // Private/local webhook URLs are only allowed outside production (e.g. http://host.docker.internal).
   allowPrivateWebhookUrls: process.env.NODE_ENV !== "production" && process.env.LISTENER_ALLOW_PRIVATE_WEBHOOKS !== "false",

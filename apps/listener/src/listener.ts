@@ -45,7 +45,8 @@ export type ListenerDeps = {
 
 export function createListener(deps: ListenerDeps) {
   const confirmations = BigInt(deps.confirmations ?? 1);
-  const batchBlocks = BigInt(deps.batchBlocks ?? 2000);
+  /** Blocks per eth_getLogs call. Many RPCs cap the range (Aevum's public RPC: 1000). */
+  let batchBlocks = BigInt(Math.max(1, deps.batchBlocks ?? 1000));
   const now = deps.now ?? (() => new Date());
   const log = deps.log ?? ((m, e) => console.log(`[listener] ${m}`, e ? JSON.stringify(e) : ""));
   const payments = deps.db.collection<PaymentDoc>("payments");
@@ -112,6 +113,25 @@ export function createListener(deps: ListenerDeps) {
     await record("payment.refunded", next);
   }
 
+  /**
+   * Fetch events from `from` up to at most `safe`. If the RPC says the range is too large,
+   * shrink the batch (to the limit it reports, if any) and try again.
+   */
+  async function getLogsFrom(from: bigint, safe: bigint) {
+    for (;;) {
+      const to = from + batchBlocks - 1n < safe ? from + batchBlocks - 1n : safe;
+      try {
+        const logs = await deps.publicClient.getContractEvents({ address: deps.checkoutAddress, abi: aevifyCheckoutAbi, fromBlock: from, toBlock: to });
+        return { logs, to };
+      } catch (error) {
+        const next = smallerBatch(error, batchBlocks);
+        if (next === null) throw error;
+        log(`RPC limits log ranges; scanning ${next} blocks at a time from now on`, { previous: batchBlocks.toString() });
+        batchBlocks = next;
+      }
+    }
+  }
+
   /** Process the next batch of confirmed blocks. Returns null when already up to date. */
   async function scanOnce(): Promise<{ from: bigint; to: bigint; events: number } | null> {
     const latest = await deps.publicClient.getBlockNumber({ cacheTime: 0 }); // viem caches this by default
@@ -120,9 +140,7 @@ export function createListener(deps: ListenerDeps) {
     const cursor = await state.findOne({ _id: cursorId });
     const from = cursor ? BigInt(cursor.lastBlock) + 1n : (deps.startBlock ?? (safe > 5000n ? safe - 5000n : 0n));
     if (from > safe) return null;
-    const to = from + batchBlocks - 1n < safe ? from + batchBlocks - 1n : safe;
-
-    const logs = await deps.publicClient.getContractEvents({ address: deps.checkoutAddress, abi: aevifyCheckoutAbi, fromBlock: from, toBlock: to });
+    const { logs, to } = await getLogsFrom(from, safe);
     const ordered = [...logs].sort((a, b) => Number((a.blockNumber ?? 0n) - (b.blockNumber ?? 0n)) || (a.logIndex ?? 0) - (b.logIndex ?? 0));
     let events = 0;
     for (const entry of ordered) {
@@ -238,3 +256,23 @@ export function createListener(deps: ListenerDeps) {
 }
 
 export type Listener = ReturnType<typeof createListener>;
+
+/**
+ * If `error` is an RPC complaint about the log range ("block range too large, max range: 1000",
+ * "query exceeds max block range 500", "more than 10000 results", …), the batch size to use
+ * instead. null for any other error, or when the batch can't get smaller.
+ */
+export function smallerBatch(error: unknown, current: bigint): bigint | null {
+  // viem puts the RPC's own words in `details`; the full message also contains the request body.
+  const e = error as { details?: string; shortMessage?: string; message?: string };
+  const text = e?.details || e?.shortMessage || e?.message || String(error);
+  if (/rate|429|too many requests/i.test(text)) return null; // slow down, don't shrink
+  if (!/range|too large|too many|more than|exceed|limit/i.test(text) || !/block|log|result|range/i.test(text)) return null;
+  if (current <= 1n) return null;
+  const reported = /max(?:imum)?[^0-9]{0,24}(\d+)/i.exec(text) ?? /(\d+)\s*blocks?/i.exec(text);
+  const limit = reported ? BigInt(reported[1]!) : null;
+  // Inclusive ranges: a limit of N allows N blocks at most; stay one under to be safe.
+  const fromLimit = limit !== null && limit > 1n && limit < current ? limit - 1n : null;
+  const next = fromLimit ?? current / 2n;
+  return next >= 1n ? next : null;
+}

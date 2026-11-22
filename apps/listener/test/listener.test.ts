@@ -3,7 +3,7 @@ import { MemoryDb } from "@aevify/shared/testing";
 import type { Db } from "mongodb";
 import type { Address, Hex } from "viem";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createListener } from "../src/listener.ts";
+import { createListener, smallerBatch } from "../src/listener.ts";
 import { isPrivateAddress, sendWebhook } from "../src/webhook-sender.ts";
 
 const CHECKOUT = "0x00000000000000000000000000000000000000C0" as Address;
@@ -18,11 +18,16 @@ function fakeChain() {
     logs: [] as Array<{ eventName: string; args: Record<string, unknown>; blockNumber: bigint; logIndex: number; transactionHash: Hex }>,
     paid: new Map<Hex, bigint>(),
     calls: [] as Array<{ fromBlock: bigint; toBlock: bigint }>,
+    /** Like Aevum's RPC: reject log ranges larger than this. */
+    maxRange: null as bigint | null,
     client: {
       getBlockNumber: async (_opts?: unknown) => chain.height,
       getBlock: async ({ blockNumber }: { blockNumber: bigint }) => ({ timestamp: 1_800_000_000n + blockNumber }),
       getContractEvents: async ({ fromBlock, toBlock }: { fromBlock: bigint; toBlock: bigint }) => {
         chain.calls.push({ fromBlock, toBlock });
+        if (chain.maxRange !== null && toBlock - fromBlock + 1n > chain.maxRange) {
+          throw Object.assign(new Error("Missing or invalid parameters."), { details: `block range too large, max range: ${chain.maxRange}` });
+        }
         return chain.logs.filter((l) => l.blockNumber >= fromBlock && l.blockNumber <= toBlock);
       },
       readContract: async ({ args }: { args: [Hex] }) => ({ paidAt: chain.paid.get(args[0]) ?? 0n }),
@@ -134,6 +139,19 @@ describe("scanning the chain", () => {
       { fromBlock: 180n, toBlock: 198n },
     ]);
     expect(await listener.scanOnce()).toBeNull();
+    expect((await listener.status()).lastBlock).toBe("198");
+  });
+
+  it("shrinks its batch when the RPC limits the log range", async () => {
+    chain.height = 200n;
+    chain.maxRange = 20n;
+    const listener = makeListener(); // asks for 50 blocks; the RPC allows 20
+    await listener.catchUp();
+    expect(chain.calls[0]).toEqual({ fromBlock: 80n, toBlock: 129n });
+    const ok = chain.calls.slice(1);
+    expect(ok.every((c) => c.toBlock - c.fromBlock + 1n <= 20n)).toBe(true);
+    expect(ok[0]).toEqual({ fromBlock: 80n, toBlock: 98n }); // the reported limit, minus one
+    expect(ok.at(-1)!.toBlock).toBe(198n);
     expect((await listener.status()).lastBlock).toBe("198");
   });
 
@@ -260,3 +278,21 @@ describe("SSRF protection", () => {
     expect((await send("http://example.com/hook")).error).toMatch(/https/);
   });
 });
+
+describe("log range limits", () => {
+  const rpcError = (details: string) => Object.assign(new Error(`Missing or invalid parameters.\nRequest body: {"fromBlock":"0x1"}\nDetails: ${details}`), { details });
+  it("uses the limit the RPC reports", () => {
+    expect(smallerBatch(rpcError("block range too large, max range: 1000"), 2000n)).toBe(999n);
+    expect(smallerBatch(rpcError("query exceeds max block range 500"), 2000n)).toBe(499n);
+  });
+  it("halves when no limit is given", () => {
+    expect(smallerBatch(rpcError("query returned more than 10000 results"), 2000n)).toBe(1000n);
+    expect(smallerBatch(rpcError("block range is too large"), 2000n)).toBe(1000n);
+  });
+  it("leaves other errors alone", () => {
+    expect(smallerBatch(rpcError("rate limit exceeded"), 2000n)).toBeNull();
+    expect(smallerBatch(new Error("fetch failed"), 2000n)).toBeNull();
+    expect(smallerBatch(rpcError("block range too large"), 1n)).toBeNull();
+  });
+});
+
