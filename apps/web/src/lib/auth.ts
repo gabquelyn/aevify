@@ -22,6 +22,7 @@ function createAuth() {
   return betterAuth({
     appName: "Aevify",
     baseURL: env.appUrl(),
+    trustedOrigins: env.trustedOrigins(),
     // Dev-only fallback so `docker compose up` works before you've set a secret.
     secret: secret ?? "aevify-dev-only-secret-change-me-0000000000",
     database: mongodbAdapter(getDb()),

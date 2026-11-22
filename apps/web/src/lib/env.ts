@@ -10,7 +10,35 @@ function optional(name: string): string | undefined {
 
 export const env = {
   /** Public base URL of this app, used in magic links, OAuth callbacks and checkout URLs. */
-  appUrl: () => (optional("BETTER_AUTH_URL") ?? optional("NEXT_PUBLIC_APP_URL") ?? "http://localhost:3000").replace(/\/$/, ""),
+  /** The public app URL. On Vercel, falls back to the project's production domain. */
+  appUrl: () =>
+    (
+      optional("BETTER_AUTH_URL") ??
+      optional("NEXT_PUBLIC_APP_URL") ??
+      (optional("VERCEL_PROJECT_PRODUCTION_URL") ? `https://${optional("VERCEL_PROJECT_PRODUCTION_URL")}` : undefined) ??
+      "http://localhost:3000"
+    ).replace(/\/+$/, ""),
+  /**
+   * Origins allowed to sign in: the app URL plus, on Vercel, the production domain and this
+   * deployment's own URLs (so previews work and a stale BETTER_AUTH_URL can't lock you out).
+   */
+  trustedOrigins: () => {
+    const origins = new Set<string>();
+    const add = (url: string | undefined) => {
+      if (!url) return;
+      try {
+        origins.add(new URL(url.includes("://") ? url : `https://${url}`).origin);
+      } catch {
+        /* ignore malformed values */
+      }
+    };
+    add(optional("BETTER_AUTH_URL"));
+    add(optional("NEXT_PUBLIC_APP_URL"));
+    add(optional("VERCEL_PROJECT_PRODUCTION_URL"));
+    add(optional("VERCEL_BRANCH_URL"));
+    add(optional("VERCEL_URL"));
+    return [...origins];
+  },
 
   isProduction: () => process.env.NODE_ENV === "production",
 

@@ -32,7 +32,7 @@ export default async function SignInPage() {
           ) : (
             <p className="rounded-xl border border-status-pending/30 bg-amber-50 p-4 text-sm text-amber-900">
               Sign-in isn&apos;t available yet: set <code className="font-mono">MONGODB_URI</code> in{" "}
-              <code className="font-mono">.env</code> and restart the application.
+              <code className="font-mono">.env</code> and restart the app.
             </p>
           )}
         </div>

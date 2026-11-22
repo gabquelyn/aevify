@@ -398,7 +398,8 @@ repository with `apps/web` as the **Root Directory**.
 
    | Variable | Value |
    |---|---|
-   | `NEXT_PUBLIC_APP_URL` | `https://<your-vercel-domain>` |
+   | `NEXT_PUBLIC_APP_URL` | `https://<your-vercel-domain>` (no trailing slash; redeploy after changing it) |
+   | `BETTER_AUTH_URL` | Same as `NEXT_PUBLIC_APP_URL`, or leave unset. Never `localhost` in production. |
    | `BETTER_AUTH_SECRET` | A new long random string (not your local one) |
    | `MONGODB_URI`, `MONGODB_DB` | Your Atlas connection (allow `0.0.0.0/0` in Atlas Network Access) |
    | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Add the Vercel redirect URI in Google Cloud first (section B) |
@@ -490,6 +491,7 @@ To try it locally first: `docker compose run --rm contracts npm pack -w @aevify/
 | `/api/health` shows `"database": "not_configured"` | Set `MONGODB_URI` in `.env` (uncomment the line), then `docker compose restart web`. |
 | `/api/health` shows `"database": "error"` | Check the URI's user and password. In MongoDB Atlas, also allow your IP (Network Access); for Vercel and Railway, allow `0.0.0.0/0`. |
 | Sign-in email never arrives | Check `docker compose logs web` for SMTP errors. Use an SMTP key (not an API key), and make `EMAIL_FROM` a verified Brevo sender. Without SMTP settings, the link is printed in those logs instead. |
+| Sign-in fails with `Invalid origin` | `BETTER_AUTH_URL` / `NEXT_PUBLIC_APP_URL` on Vercel don't match the site's address. Fix them and redeploy. |
 | Google: `redirect_uri_mismatch` | Add `<NEXT_PUBLIC_APP_URL>/api/auth/callback/google` exactly to the OAuth client's redirect URIs. |
 | `/api/health` shows `"signer": "mismatch"` | `AEVIFY_SIGNER_PRIVATE_KEY` isn't the contract's signer (step 11). |
 | Payments: `merchant_not_ready` | Connect a payout wallet in the dashboard first. |

@@ -2,7 +2,10 @@ export const metadata = { title: "REST API" };
 
 # REST API
 
-Base URL: `https://aevify.vercel.app`. Requests and responses are
+**Base URL:** `https://aevify.vercel.app/api/v1`
+
+Every endpoint below is relative to it: `POST /payments` means
+`POST https://aevify.vercel.app/api/v1/payments`. Requests and responses are
 JSON. Amounts are **decimal strings** in tUSD8 (6 decimals), like `"25.00"`, with the exact
 on-chain value in `amountBaseUnits` (`"25000000"`).
 
@@ -14,7 +17,7 @@ Send your secret key as a bearer token:
 Authorization: Bearer sk_test_...
 ```
 
-Secret keys are for servers only. `GET /api/v1/checkout/:id` and `GET /api/v1/config` are public.
+Secret keys are for servers only. `GET /checkout/:id` and `GET /config` are public.
 
 ## Errors
 
@@ -34,7 +37,7 @@ Secret keys are for servers only. `GET /api/v1/checkout/:id` and `GET /api/v1/co
 
 ## Create a payment
 
-`POST /api/v1/payments`
+`POST /payments`
 
 ```bash
 curl -X POST "https://aevify.vercel.app/api/v1/payments" \
@@ -63,11 +66,11 @@ Returns `201` with a [payment object](#payment-object). Each payment request is 
 
 ## Retrieve a payment
 
-`GET /api/v1/payments/:id`. The status is refreshed from the contract on every read.
+`GET /payments/:id`. The status is refreshed from the contract on every read.
 
 ## List payments
 
-`GET /api/v1/payments?limit=20&startingAfter=pay_…`
+`GET /payments?limit=20&startingAfter=pay_…`
 
 Newest first. `hasMore` tells you whether there's another page; pass the last ID as `startingAfter`.
 
@@ -113,7 +116,7 @@ Newest first. `hasMore` tells you whether there's another page; pass the last ID
 
 ## Checkout data
 
-`GET /api/v1/checkout/:id`: **public**, no key, CORS-enabled. Everything needed to pay, and no
+`GET /checkout/:id`: **public**, no key, CORS-enabled. Everything needed to pay, and no
 merchant secrets. The hosted checkout and [AI agents](/docs/agents) use it.
 
 ```json
@@ -142,16 +145,17 @@ merchant secrets. The hosted checkout and [AI agents](/docs/agents) use it.
 
 ## Config
 
-`GET /api/v1/config`: public. The chain, the checkout contract address and the token.
+`GET /config`: public. The chain, the checkout contract address and the token.
 
 ## Health
 
-`GET /api/health`: whether the database is connected, and whether the server's signer and
+`GET https://aevify.vercel.app/api/health` (outside `/api/v1`): whether the database is connected, and whether the server's signer and
 operator keys match the deployed contract's roles.
 
 ## Dashboard endpoints
 
-The dashboard uses these with the signed-in session cookie. They're listed for completeness;
+The dashboard uses these with the signed-in session cookie. They live outside `/api/v1`, under
+`https://aevify.vercel.app/api/merchant`. They're listed for completeness;
 use secret-key endpoints from your own code.
 
 | Method | Path | |

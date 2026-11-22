@@ -149,7 +149,8 @@ export class Aevify {
     const envBase = typeof process !== "undefined" ? process.env?.AEVIFY_BASE_URL : undefined;
     const baseUrl = options.baseUrl ?? envBase;
     if (!baseUrl) throw new Error("Set baseUrl (your Aevify app's URL) or the AEVIFY_BASE_URL environment variable.");
-    this.baseUrl = baseUrl.replace(/\/$/, "");
+    // The app URL, e.g. https://aevify.vercel.app. The API base (…/api/v1) works too.
+    this.baseUrl = baseUrl.replace(/\/+$/, "").replace(/\/api\/v1$/, "");
     this._secretKey = secretKey;
     this._options = { timeoutMs: options.timeoutMs ?? 30_000, maxRetries: options.maxRetries ?? 2, fetch: options.fetch ?? globalThis.fetch.bind(globalThis) };
     this.payments = new Payments(this);
