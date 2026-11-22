@@ -15,7 +15,7 @@ import { AevifyButton } from "@aevify/react";
 
 <AevifyButton
   publishableKey="pk_test_..."
-  baseUrl="https://your-aevify-app.example"
+  baseUrl="https://aevify.vercel.app"
   createPayment={() => fetch("/api/checkout", { method: "POST" }).then((r) => r.json()).then((p) => p.id)}
   onSuccess={({ paymentId }) => console.log("paid", paymentId)}
 />
@@ -30,6 +30,6 @@ import { AevifyButton } from "@aevify/react";
 Create the payment on your server with [`@aevify/node`](https://www.npmjs.com/package/@aevify/node),
 and fulfil orders from the `payment.paid` webhook, not from `onSuccess`.
 
-Full documentation: the `/docs/sdk/react` page of your Aevify app.
+Full documentation: https://aevify.vercel.app/docs/sdk/react
 
 MIT licensed.

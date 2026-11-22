@@ -3,7 +3,7 @@
  *
  *   <AevifyButton
  *     publishableKey="pk_test_..."
- *     baseUrl="https://your-aevify-app"
+ *     baseUrl="https://aevify.vercel.app"
  *     createPayment={() => fetch("/api/checkout", { method: "POST" }).then((r) => r.json())}
  *     onSuccess={({ paymentId }) => router.push(`/orders/thanks?payment=${paymentId}`)}
  *   />

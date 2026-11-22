@@ -23,7 +23,7 @@ npm install @aevify/node @aevify/react
 Environment variables on your server:
 
 ```bash
-AEVIFY_BASE_URL=https://your-aevify-app.example     # your Aevify deployment
+AEVIFY_BASE_URL=https://aevify.vercel.app
 AEVIFY_SECRET_KEY=sk_test_...
 AEVIFY_WEBHOOK_SECRET=whsec_...
 NEXT_PUBLIC_AEVIFY_PUBLISHABLE_KEY=pk_test_...
@@ -72,7 +72,7 @@ export function PayButton({ orderId }: { orderId: string }) {
   return (
     <AevifyButton
       publishableKey={process.env.NEXT_PUBLIC_AEVIFY_PUBLISHABLE_KEY!}
-      baseUrl="https://your-aevify-app.example"
+      baseUrl="https://aevify.vercel.app"
       createPayment={() =>
         fetch("/api/checkout", { method: "POST", body: JSON.stringify({ orderId }) }).then((r) => r.json())
       }

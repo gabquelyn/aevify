@@ -63,7 +63,7 @@ messages. They're only sent to the origin you passed (once it's verified):
 
 ```js
 window.addEventListener("message", (event) => {
-  if (event.origin !== "https://your-aevify-app.example") return;
+  if (event.origin !== "https://aevify.vercel.app") return;
   const data = event.data;
   if (data?.source !== "aevify") return;
   // data.type: "ready" | "resize" (data.height) | "payment.paid" (data.txHash)

@@ -1,7 +1,7 @@
 /**
  * @aevify/node: the Aevify server SDK.
  *
- *   const aevify = new Aevify(process.env.AEVIFY_SECRET_KEY!, { baseUrl: "https://your-aevify-app" });
+ *   const aevify = new Aevify(process.env.AEVIFY_SECRET_KEY!, { baseUrl: "https://aevify.vercel.app" });
  *   const payment = await aevify.payments.create({ amount: "25.00", orderId: "1042" });
  *   // send the customer to payment.checkoutUrl, or open it with @aevify/react
  *

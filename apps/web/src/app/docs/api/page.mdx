@@ -2,7 +2,7 @@ export const metadata = { title: "REST API" };
 
 # REST API
 
-Base URL: your Aevify app, e.g. `https://your-aevify-app.example`. Requests and responses are
+Base URL: `https://aevify.vercel.app`. Requests and responses are
 JSON. Amounts are **decimal strings** in tUSD8 (6 decimals), like `"25.00"`, with the exact
 on-chain value in `amountBaseUnits` (`"25000000"`).
 
@@ -37,7 +37,7 @@ Secret keys are for servers only. `GET /api/v1/checkout/:id` and `GET /api/v1/co
 `POST /api/v1/payments`
 
 ```bash
-curl -X POST "$AEVIFY_BASE_URL/api/v1/payments" \
+curl -X POST "https://aevify.vercel.app/api/v1/payments" \
   -H "Authorization: Bearer $AEVIFY_SECRET_KEY" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: order-1042" \
@@ -93,7 +93,7 @@ Newest first. `hasMore` tells you whether there's another page; pass the last ID
   "payer": null,
   "paidBy": "0x15d3…6A65",
   "txHash": "0x…",
-  "checkoutUrl": "https://your-aevify-app.example/pay/pay_7Hq2…",
+  "checkoutUrl": "https://aevify.vercel.app/pay/pay_7Hq2…",
   "onchain": { "paymentId": "0x…", "merchantId": "0x…" },
   "successUrl": null,
   "cancelUrl": null,

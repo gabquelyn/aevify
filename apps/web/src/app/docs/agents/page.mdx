@@ -26,7 +26,7 @@ const payment = await aevify.payments.create({
 merchant, expiry, and a ready-to-send contract call.
 
 ```ts
-const checkout = await fetch(`${AEVIFY_BASE_URL}/api/v1/checkout/${paymentId}`).then((r) => r.json());
+const checkout = await fetch(`https://aevify.vercel.app/api/v1/checkout/${paymentId}`).then((r) => r.json());
 ```
 
 ## 3. The agent checks its spending policy

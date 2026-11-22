@@ -30,6 +30,6 @@ if (event.type === "payment.paid") {
 - Webhook verification with Web Crypto (Node 20+, Bun, Deno, edge)
 - Refuses to run in a browser
 
-Full documentation: the `/docs/sdk/node` page of your Aevify app.
+Full documentation: https://aevify.vercel.app/docs/sdk/node
 
 MIT licensed.

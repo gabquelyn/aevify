@@ -20,7 +20,7 @@ import { AevifyButton } from "@aevify/react";
 
 <AevifyButton
   publishableKey="pk_test_..."
-  baseUrl="https://your-aevify-app.example"
+  baseUrl="https://aevify.vercel.app"
   createPayment={async () => {
     const res = await fetch("/api/checkout", { method: "POST" });
     return (await res.json()).id;           // the pay_... ID from your server
@@ -59,7 +59,7 @@ const [open, setOpen] = useState(false);
 
 <AevifyCheckout
   publishableKey="pk_test_..."
-  baseUrl="https://your-aevify-app.example"
+  baseUrl="https://aevify.vercel.app"
   paymentId={paymentId}
   open={open}
   onClose={() => setOpen(false)}

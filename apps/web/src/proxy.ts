@@ -36,5 +36,5 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Pages only: not API routes or static assets.
-  matcher: ["/((?!api/|_next/static|_next/image|favicon.svg).*)"],
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.svg|og.png).*)"],
 };
