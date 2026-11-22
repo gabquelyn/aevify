@@ -146,8 +146,11 @@ function Webhooks() {
       <div className="mt-5 rounded-xl border border-line bg-surface-muted p-4">
         <p className="text-sm font-medium">Signing secret</p>
         <p className="mt-0.5 text-xs text-ink-muted">Verify the Aevify-Signature header with this, so you only trust events from Aevify.</p>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <code className="font-mono text-xs">{show ? merchant.webhookSecret : "whsec_••••••••••••••••••••"}</code>
+        {/* Long and unbroken: give it its own line that can break anywhere (narrow screens). */}
+        <code className="mt-3 block w-full min-w-0 break-all rounded-lg border border-line bg-surface px-3 py-2 font-mono text-xs leading-relaxed" data-testid="webhook-secret">
+          {show ? merchant.webhookSecret : "whsec_••••••••••••••••••••"}
+        </code>
+        <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-2">
           <button onClick={() => setShow((s) => !s)} className="text-xs font-medium text-brand-600 hover:underline">
             {show ? "Hide" : "Reveal"}
           </button>
@@ -183,7 +186,11 @@ function QuickStart() {
         </div>
       </div>
       <p className="mt-3 text-sm text-ink-muted">
-        The response includes <code className="font-mono text-xs">checkoutUrl</code>. Full reference: <code className="font-mono text-xs">docs/API.md</code>.
+        The response includes <code className="font-mono text-xs">checkoutUrl</code>. Full reference:{" "}
+          <a href="/docs/api" className="font-medium text-brand-600 hover:underline">
+            API docs
+          </a>
+          .
       </p>
     </Card>
   );
@@ -331,8 +338,8 @@ function AllowedDomains() {
       {origins.length > 0 ? (
         <ul className="mb-4 divide-y divide-line rounded-xl border border-line">
           {origins.map((o) => (
-            <li key={o} className="flex items-center justify-between px-4 py-2.5">
-              <span className="font-mono text-sm">{o}</span>
+            <li key={o} className="flex items-center justify-between gap-3 px-4 py-2.5">
+              <span className="min-w-0 break-all font-mono text-sm">{o}</span>
               <button onClick={() => save(origins.filter((x) => x !== o), `${o} removed.`)} className="text-xs text-ink-muted hover:text-status-failed">
                 Remove
               </button>

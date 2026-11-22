@@ -21,7 +21,8 @@ const components: MDXComponents = {
     <blockquote className="my-6 rounded-xl border border-brand-200 bg-brand-50 px-5 py-1 text-sm text-brand-700 [&_p]:text-brand-700" {...props} />
   ),
   hr: () => <hr className="my-10 border-line" />,
-  code: (props) => <code className="rounded-md bg-surface-muted px-1.5 py-0.5 font-mono text-[0.85em] text-ink [pre_&]:bg-transparent [pre_&]:p-0 [pre_&]:text-slate-200" {...props} />,
+  // Inline code can wrap anywhere (long URLs on phones); code blocks keep scrolling instead.
+  code: (props) => <code className="rounded-md bg-surface-muted px-1.5 py-0.5 font-mono text-[0.85em] text-ink [overflow-wrap:anywhere] [pre_&]:[overflow-wrap:normal] [pre_&]:bg-transparent [pre_&]:p-0 [pre_&]:text-slate-200" {...props} />,
   pre: (props) => <pre className="my-5 overflow-x-auto rounded-xl bg-ink p-4 font-mono text-[13px] leading-relaxed text-slate-200" {...props} />,
   table: (props) => (
     <div className="my-6 overflow-x-auto rounded-xl border border-line">
