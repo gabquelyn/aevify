@@ -8,6 +8,7 @@ import { api, formatAmount, formatDate, type Payment } from "../../_components/a
 import { useDashboard } from "../../_components/shell";
 import { Banner, Card, CopyButton, Field, inputClass, PrimaryButton, Spinner, StatusBadge } from "../../_components/ui";
 import { useWalletAction } from "../../_components/use-wallet";
+import { WalletStatusView } from "../../_components/wallet-status";
 
 export default function PaymentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -173,7 +174,7 @@ function RefundCard({ payment, onRefunded }: { payment: Payment; onRefunded: (me
   const { merchant, config } = useDashboard();
   const remaining = (Number(payment.amount) - Number(payment.refunded)).toFixed(6).replace(/\.?0+$/, "");
   const [amount, setAmount] = useState(remaining);
-  const { status, run, busy } = useWalletAction();
+  const { status, run, pick, reset, busy } = useWalletAction();
 
   async function refund(e: React.FormEvent) {
     e.preventDefault();
@@ -219,12 +220,7 @@ function RefundCard({ payment, onRefunded }: { payment: Payment; onRefunded: (me
         <PrimaryButton type="submit" disabled={busy || !config || Number(amount) <= 0 || Number(amount) > Number(remaining)} className="w-full">
           {busy ? "Refunding…" : "Refund with payout wallet"}
         </PrimaryButton>
-        {status.kind === "busy" && (
-          <p className="flex items-center gap-2 text-sm text-ink-muted">
-            <Spinner /> {status.label}
-          </p>
-        )}
-        {status.kind === "error" && <Banner tone="error">{status.message}</Banner>}
+        <WalletStatusView status={status} onPick={pick} onReset={reset} />
       </form>
     </Card>
   );

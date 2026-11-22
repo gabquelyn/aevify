@@ -68,6 +68,13 @@ with sync_playwright() as p:
 
     # ---------------- Merchant: onboarding, wallet, keys, payment link ----------------
     m = wallet_context(browser, ACCOUNTS["payout"], viewport={"width": 1360, "height": 900})
+    # A second extension that never answers: the dashboard must ask which wallet to use.
+    m.add_init_script("""(() => {
+      const decoy = { request: () => new Promise(() => {}), on() {}, removeListener() {} };
+      const announce = () => window.dispatchEvent(new CustomEvent('eip6963:announceProvider', { detail: {
+        info: { uuid: 'decoy', name: 'Decoy Wallet', rdns: 'dev.aevify.decoy', icon: '' }, provider: decoy } }));
+      window.addEventListener('eip6963:requestProvider', announce);
+    })();""")
     MERCHANT_EMAIL = f"merchant{int(time.time())}%40example.com"  # fresh merchant each run
     m.add_cookies([{"name": "aevify_test_user", "value": MERCHANT_EMAIL, "url": APP}])
     page = m.new_page()
@@ -81,6 +88,9 @@ with sync_playwright() as p:
 
     page.get_by_role("link", name="Settings").first.click()
     page.get_by_role("button", name="Connect wallet").click()
+    expect(page.get_by_test_id("wallet-picker")).to_be_visible()
+    check("dashboard asks which wallet when several are installed", page.get_by_role("button", name="Decoy Wallet").is_visible())
+    page.get_by_role("button", name="Test Wallet").click()
     expect(page.get_by_text("Verified on Aevum")).to_be_visible()
     check("payout wallet verified on-chain", page.get_by_text(ACCOUNTS["payout"]).is_visible())
     page.screenshot(path=f"{OUT}/02-settings-wallet.png")

@@ -5,8 +5,9 @@ import { useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { api, formatDate, type Merchant } from "../_components/api";
 import { useDashboard } from "../_components/shell";
-import { Banner, Card, Field, inputClass, PageHeader, PrimaryButton, SecondaryButton, Spinner } from "../_components/ui";
+import { Card, Field, inputClass, PageHeader, PrimaryButton, SecondaryButton } from "../_components/ui";
 import { useWalletAction } from "../_components/use-wallet";
+import { WalletStatusView } from "../_components/wallet-status";
 
 export default function SettingsPage() {
   return (
@@ -23,7 +24,7 @@ export default function SettingsPage() {
 
 function PayoutWallet() {
   const { merchant, setMerchant, reloadMerchant, config } = useDashboard();
-  const { status, setStatus, run, busy } = useWalletAction();
+  const { status, setStatus, run, pick, reset, busy } = useWalletAction();
   const { onchain } = merchant;
   const explorer = config?.chain.explorerUrl;
   const changeDue = onchain.pendingPayoutEffectiveAt ? new Date(onchain.pendingPayoutEffectiveAt) <= new Date() : false;
@@ -124,13 +125,7 @@ function PayoutWallet() {
       )}
 
       <div className="mt-4 space-y-3">
-        {status.kind === "busy" && (
-          <p className="flex items-center gap-2 text-sm text-ink-muted">
-            <Spinner /> {status.label}
-          </p>
-        )}
-        {status.kind === "error" && <Banner tone="error">{status.message}</Banner>}
-        {status.kind === "done" && <Banner tone="success">{status.message}</Banner>}
+        <WalletStatusView status={status} onPick={pick} onReset={reset} />
       </div>
     </Card>
   );

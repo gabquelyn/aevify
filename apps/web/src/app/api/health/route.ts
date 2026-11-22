@@ -9,7 +9,7 @@ import { env } from "@/lib/env";
 // Always run at request time; this checks live connections.
 export const dynamic = "force-dynamic";
 
-type Check = "ok" | "not_configured" | "error" | "mismatch";
+type Check = "ok" | "not_configured" | "invalid_key" | "error" | "mismatch";
 
 async function checkDatabase(): Promise<{ status: Check; errorType?: string }> {
   if (!isDatabaseConfigured()) return { status: "not_configured" };
@@ -24,7 +24,13 @@ async function checkDatabase(): Promise<{ status: Check; errorType?: string }> {
 }
 
 /** Is the API's signer/operator key the one the deployed contract expects? */
-async function checkRole(role: "signer" | "operator", privateKey: string | undefined): Promise<Check> {
+async function checkRole(role: "signer" | "operator", readKey: () => string | undefined): Promise<Check> {
+  let privateKey: string | undefined;
+  try {
+    privateKey = readKey();
+  } catch {
+    return "invalid_key";
+  }
   if (!privateKey || !isChainConfigured()) return "not_configured";
   try {
     const { publicClient, checkoutAddress } = getChainContext();
@@ -45,8 +51,8 @@ async function checkRole(role: "signer" | "operator", privateKey: string | undef
 export async function GET() {
   const [database, signer, operator] = await Promise.all([
     checkDatabase(),
-    checkRole("signer", env.signerPrivateKey()),
-    checkRole("operator", env.operatorPrivateKey()),
+    checkRole("signer", env.signerPrivateKey),
+    checkRole("operator", env.operatorPrivateKey),
   ]);
   const ok = database.status === "ok" && signer === "ok" && operator === "ok";
 
@@ -69,6 +75,9 @@ export async function GET() {
         signer === "not_configured" && "Set AEVIFY_SIGNER_PRIVATE_KEY.",
         signer === "mismatch" && "AEVIFY_SIGNER_PRIVATE_KEY isn't the contract's signer. Use the right key, or run ACTION=set-signer.",
         operator === "not_configured" && "Set AEVIFY_OPERATOR_PRIVATE_KEY.",
+        signer === "invalid_key" && "AEVIFY_SIGNER_PRIVATE_KEY isn't a private key (64 hex characters, with or without 0x).",
+        operator === "invalid_key" && "AEVIFY_OPERATOR_PRIVATE_KEY isn't a private key (64 hex characters, with or without 0x).",
+        (signer === "error" || operator === "error") && "Couldn't read the contract's roles. Check AEVUM_RPC_URL and AEVIFY_CHECKOUT_ADDRESS; details are in the server log.",
         operator === "mismatch" && "AEVIFY_OPERATOR_PRIVATE_KEY isn't the contract's operator. Use the right key, or run ACTION=set-operator.",
       ].filter(Boolean),
     },

@@ -42,6 +42,21 @@ export const env = {
   publicRpcUrl: () => optional("AEVUM_PUBLIC_RPC_URL") ?? optional("AEVUM_RPC_URL"),
   chainId: () => Number(optional("AEVUM_CHAIN_ID") ?? 44005),
   checkoutAddress: () => optional("AEVIFY_CHECKOUT_ADDRESS"),
-  signerPrivateKey: () => optional("AEVIFY_SIGNER_PRIVATE_KEY"),
-  operatorPrivateKey: () => optional("AEVIFY_OPERATOR_PRIVATE_KEY"),
+  signerPrivateKey: () => privateKey("AEVIFY_SIGNER_PRIVATE_KEY"),
+  operatorPrivateKey: () => privateKey("AEVIFY_OPERATOR_PRIVATE_KEY"),
 };
+
+/**
+ * A private key from the environment, with or without the 0x prefix (MetaMask exports keys
+ * without it; viem needs it). Anything that isn't 32 bytes of hex is a configuration error.
+ */
+function privateKey(name: string): `0x${string}` | undefined {
+  const raw = optional(name)?.trim().replace(/^["']|["']$/g, "");
+  if (!raw) return undefined;
+  const key = raw.startsWith("0x") || raw.startsWith("0X") ? `0x${raw.slice(2)}` : `0x${raw}`;
+  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) {
+    throw new Error(`${name} must be a private key: 64 hex characters, with or without 0x.`);
+  }
+  return key as `0x${string}`;
+}
+
