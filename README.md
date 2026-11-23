@@ -9,7 +9,8 @@
 | **Live app** | https://aevify.vercel.app (docs at [aevify.vercel.app/docs](https://aevify.vercel.app/docs)) |
 | **Checkout contract** | [`0xdAC5989DFb977C07a614E7Ed3aA806B445896Ae3`](https://explorer-test.qday.info/address/0xdAC5989DFb977C07a614E7Ed3aA806B445896Ae3) on Aevum Testnet (chain ID 44005) |
 | **Stablecoin** | tUSD8 [`0x4565…3483`](https://explorer-test.qday.info/address/0x456569838f1d43009A91ebA4263147Afd7233483) |
-| **npm packages** | [`@aevify/node`](./packages/node) (server SDK), [`@aevify/react`](./packages/react) (Pay button and modal) |
+| **Demo store** | [Admit](https://github.com/YOUR_GITHUB_USER/aevify-demo-store) (`aevify-demo-store`): an event ticket platform paid by people and an AI agent, built only on the npm packages |
+| **npm packages** | [`@aevify/node`](https://www.npmjs.com/package/@aevify/node) (server SDK), [`@aevify/react`](https://www.npmjs.com/package/@aevify/react) (Pay button and modal) |
 | **Challenge** | Aevum Builder Challenge #1 |
 
 > Testnet only. tUSD8 and tQDAY are test tokens with no value.
@@ -128,6 +129,9 @@ sequenceDiagram
 ```
 
 ### 3. An AI agent pays
+
+See it live in the [Admit demo store](https://github.com/YOUR_GITHUB_USER/aevify-demo-store): its `/agent` page streams each step as the agent books event passes.
+
 
 The store creates a payment, optionally locked to the agent's wallet (`payer`). The agent reads
 `GET /api/v1/checkout/:id` (public, includes a ready-made contract call), checks the amount,
