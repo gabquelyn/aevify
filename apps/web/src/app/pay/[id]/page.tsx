@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cache } from "react";
 import { notFound } from "next/navigation";
 import { isChainConfigured } from "@/lib/chain";
 import { isDatabaseConfigured } from "@/lib/db";
@@ -11,23 +12,24 @@ export const dynamic = "force-dynamic";
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-async function loadPayment(id: string) {
+/** Cached per request, so the page and its metadata share one set of database and chain reads. */
+const loadPayment = cache(async function loadPayment(id: string) {
   if (!isDatabaseConfigured() || !isChainConfigured()) return null;
   const payment = await findPayment(id);
   if (!payment) return undefined;
   const merchant = await findMerchantById(payment.merchantId);
   if (!merchant) return undefined;
   return { payment, merchant };
-}
+});
 
-async function load(id: string) {
+const loadCheckout = cache(async function loadCheckout(id: string) {
   const found = await loadPayment(id);
   if (!found) return found;
   return serializeCheckout(await syncPayment(found.payment), found.merchant);
-}
+});
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const data = await load((await params).id).catch(() => null);
+  const data = await loadCheckout((await params).id).catch(() => null);
   return {
     title: data ? `Pay ${data.merchant.name} · Aevify` : "Checkout · Aevify",
     robots: { index: false, follow: false },
@@ -39,7 +41,13 @@ export default async function PayPage({ params, searchParams }: Props) {
   const { id } = await params;
   const query = await searchParams;
   const embed = query.embed === "1";
-  const found = await loadPayment(id);
+  let found: Awaited<ReturnType<typeof loadPayment>>;
+  try {
+    found = await loadPayment(id);
+  } catch (error) {
+    console.error("[pay] Couldn't load payment", id, error);
+    return <Unavailable embed={embed} />;
+  }
   if (found === undefined) notFound();
 
   // Embedded (by @aevify/react): the publishable key must match and the parent site must be allowed.
@@ -50,15 +58,32 @@ export default async function PayPage({ params, searchParams }: Props) {
     parentOrigin = check.origin;
   }
 
-  const data = found ? await serializeCheckout(await syncPayment(found.payment), found.merchant) : null;
-  if (data === null) {
-    return (
-      <main className="flex min-h-dvh items-center justify-center px-6">
-        <p className="text-sm text-ink-muted">Checkout is temporarily unavailable. Please try again shortly.</p>
-      </main>
-    );
+  let data: Awaited<ReturnType<typeof loadCheckout>> = null;
+  try {
+    data = found ? await loadCheckout(id) : null;
+  } catch (error) {
+    // e.g. the RPC is down: show a calm page instead of a server error.
+    console.error("[pay] Couldn't prepare checkout", id, error);
   }
+  if (!data) return <Unavailable embed={embed} />;
   return <Checkout initial={data} embed={embed} parentOrigin={parentOrigin} />;
+}
+
+/** Shown when the database or chain can't be reached. In a modal, tells @aevify/react to fall back at once. */
+function Unavailable({ embed }: { embed: boolean }) {
+  const script = `window.parent!==window&&window.parent.postMessage(${JSON.stringify({ source: "aevify", type: "error", reason: "unavailable" })},"*")`;
+  return (
+    <main className="flex min-h-dvh items-center justify-center px-6">
+      <div className="max-w-sm text-center">
+        <p className="font-medium">Checkout is busy right now</p>
+        <p className="mt-2 text-sm text-ink-muted">We couldn&apos;t reach the network. Nothing has been charged.</p>
+        <a href="" className="mt-5 inline-flex rounded-full bg-ink px-5 py-2 text-sm font-medium text-white">
+          Try again
+        </a>
+      </div>
+      {embed && <script dangerouslySetInnerHTML={{ __html: script }} />}
+    </main>
+  );
 }
 
 const REFUSED: Record<string, string> = {

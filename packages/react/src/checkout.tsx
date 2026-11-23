@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { checkoutUrl, readAevifyMessage, validateConfig, type AevifyConfig, type CheckoutResult } from "./core.ts";
+import { checkEmbed, checkoutUrl, readAevifyMessage, validateConfig, type AevifyConfig, type CheckoutResult } from "./core.ts";
 
 export type AevifyCheckoutProps = AevifyConfig & {
   /** The payment to show (create it on your server with @aevify/node). */
@@ -142,10 +142,26 @@ export function AevifyCheckout(props: AevifyCheckoutProps) {
     };
   }, [open, paymentId, props.baseUrl, closeOnSuccess]);
 
+  // Ask Aevify up front whether this site may embed the checkout. Browsers block a disallowed
+  // frame silently, so without this a misconfigured store would only see a timeout.
+  useEffect(() => {
+    if (!open || !paymentId || configError || typeof window === "undefined") return;
+    let cancelled = false;
+    void checkEmbed(props, paymentId, window.location.origin).then((reason) => {
+      if (cancelled || !reason || paid.current) return;
+      setProblem(reason);
+      callbacks.current.onError?.(new Error(reason));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, paymentId, configError, props.baseUrl, props.publishableKey]);
+
   // If the frame never says hello (blocked by the browser, network trouble), offer a new tab.
   useEffect(() => {
     if (!open || ready || problem || !src) return;
-    const t = setTimeout(() => setProblem("The checkout is taking too long to load here."), READY_TIMEOUT_MS);
+    const t = setTimeout(() => setProblem("The checkout is taking too long to load here. If this keeps happening, check that this site is in your Aevify allowed domains."), READY_TIMEOUT_MS);
     return () => clearTimeout(t);
   }, [open, ready, problem, src]);
 

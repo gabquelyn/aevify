@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkoutUrl, readAevifyMessage, validateConfig } from "../src/core.ts";
+import { checkEmbed, checkoutUrl, embedCheckUrl, readAevifyMessage, validateConfig } from "../src/core.ts";
 
 const config = { publishableKey: `pk_test_${"a".repeat(32)}`, baseUrl: "https://pay.aevify.test/" };
 
@@ -35,5 +35,24 @@ describe("readAevifyMessage", () => {
     expect(msg({ data: { source: "aevify", type: "payment.paid", paymentId: "pay_2" } })).toBeNull();
     expect(msg({ data: "hello" })).toBeNull();
     expect(msg({ data: { type: "ready", paymentId: "pay_1" } })).toBeNull();
+  });
+});
+
+describe("checkEmbed", () => {
+  const config = { publishableKey: "pk_test_abc", baseUrl: "https://aevify.example/" };
+  it("builds the check URL", () => {
+    expect(embedCheckUrl(config, "pay_1", "https://shop.example")).toBe(
+      "https://aevify.example/api/v1/checkout/pay_1/embed?pk=pk_test_abc&origin=https%3A%2F%2Fshop.example",
+    );
+    expect(embedCheckUrl({ ...config, baseUrl: "https://aevify.example/api/v1" }, "pay_1", "https://s.example")).toContain("https://aevify.example/api/v1/checkout/");
+  });
+  it("returns Aevify's reason when embedding isn't allowed", async () => {
+    const fetchImpl = (async () => Response.json({ ok: false, reason: "origin_not_allowed", message: "https://shop.example isn't in Admit's allowed domains." })) as typeof fetch;
+    expect(await checkEmbed(config, "pay_1", "https://shop.example", fetchImpl)).toBe("https://shop.example isn't in Admit's allowed domains.");
+  });
+  it("lets the frame try when allowed or when the check is unavailable", async () => {
+    expect(await checkEmbed(config, "pay_1", "https://shop.example", (async () => Response.json({ ok: true })) as typeof fetch)).toBeNull();
+    expect(await checkEmbed(config, "pay_1", "https://shop.example", (async () => new Response("", { status: 404 })) as typeof fetch)).toBeNull();
+    expect(await checkEmbed(config, "pay_1", "https://shop.example", (async () => { throw new Error("offline"); }) as typeof fetch)).toBeNull();
   });
 });

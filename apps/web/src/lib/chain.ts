@@ -1,7 +1,9 @@
 import {
+  AEVUM_TESTNET,
   aevifyCheckoutAbi,
   aevumChain,
   paymentRequestTypedData,
+  TUSD8,
   type PaymentRequestStruct,
 } from "@aevify/shared";
 import {
@@ -55,7 +57,9 @@ export function getChainContext(): ChainContext {
     cached = {
       key,
       context: {
-        publicClient: createPublicClient({ chain, transport: http(rpcUrl) }) as PublicClient,
+        // Fail fast: pages wait on these reads, and the public RPC can be slow or rate-limited.
+        // (viem's defaults, 10 s x 3 retries, could hold a page for over 30 s; this caps a read near 8 s.)
+        publicClient: createPublicClient({ chain, transport: http(rpcUrl, { timeout: 4_000, retryCount: 1, retryDelay: 200 }) }) as PublicClient,
         chainId,
         checkoutAddress: getAddress(checkout),
       },
@@ -70,14 +74,21 @@ let tokenCache: { checkout: Address; token: { address: Address; symbol: string; 
 
 /** The token the checkout contract accepts (tUSD8 on Aevum), read once from the contract. */
 export async function getCheckoutToken() {
-  const { publicClient, checkoutAddress } = getChainContext();
+  const { publicClient, checkoutAddress, chainId } = getChainContext();
   if (tokenCache?.checkout !== checkoutAddress) {
-    const address = await publicClient.readContract({ address: checkoutAddress, abi: aevifyCheckoutAbi, functionName: "token" });
-    const [symbol, decimals] = await Promise.all([
-      publicClient.readContract({ address, abi: erc20Abi, functionName: "symbol" }),
-      publicClient.readContract({ address, abi: erc20Abi, functionName: "decimals" }),
-    ]);
-    tokenCache = { checkout: checkoutAddress, token: { address, symbol, decimals } };
+    try {
+      const address = await publicClient.readContract({ address: checkoutAddress, abi: aevifyCheckoutAbi, functionName: "token" });
+      const [symbol, decimals] = await Promise.all([
+        publicClient.readContract({ address, abi: erc20Abi, functionName: "symbol" }),
+        publicClient.readContract({ address, abi: erc20Abi, functionName: "decimals" }),
+      ]);
+      tokenCache = { checkout: checkoutAddress, token: { address, symbol, decimals } };
+    } catch (error) {
+      // On Aevum the checkout contract always takes tUSD8, so a slow RPC needn't break checkout.
+      if (chainId !== AEVUM_TESTNET.id) throw error;
+      console.warn("[chain] Couldn't read the token from the contract; using tUSD8.", error);
+      return { address: getAddress(TUSD8.address), symbol: TUSD8.symbol, decimals: TUSD8.decimals };
+    }
   }
   return tokenCache.token;
 }
@@ -192,19 +203,33 @@ export async function readPaymentOnChain(paymentId: Hex): Promise<OnChainPayment
   return { payer: p.payer, amount: p.amount, fee: p.fee, refunded: p.refunded, paidAt: new Date(Number(p.paidAt) * 1000) };
 }
 
-/** Find the transaction that paid a payment (best effort; null if the RPC can't search logs). */
+/** Most RPCs cap eth_getLogs ranges; Aevum's public RPC allows 1,000 blocks. */
+const LOG_WINDOW = 1000n;
+const MAX_LOG_WINDOWS = 5n;
+
+/**
+ * Find the transaction that paid a payment (best effort; null if not found quickly).
+ * Searches forward from the block the payment was created in, in windows the RPC accepts.
+ * The listener also records the transaction hash, so this only needs to cover recent payments.
+ */
 export async function findPaymentTxHash(paymentId: Hex, fromBlock: bigint | null): Promise<Hex | null> {
+  if (fromBlock === null) return null;
   const { publicClient, checkoutAddress } = getChainContext();
   try {
-    const logs = await publicClient.getContractEvents({
-      address: checkoutAddress,
-      abi: aevifyCheckoutAbi,
-      eventName: "PaymentPaid",
-      args: { paymentId },
-      fromBlock: fromBlock ?? "earliest",
-      toBlock: "latest",
-    });
-    return logs[0]?.transactionHash ?? null;
+    const latest = await publicClient.getBlockNumber({ cacheTime: 0 });
+    for (let start = fromBlock, i = 0n; start <= latest && i < MAX_LOG_WINDOWS; start += LOG_WINDOW, i++) {
+      const end = start + LOG_WINDOW - 1n < latest ? start + LOG_WINDOW - 1n : latest;
+      const logs = await publicClient.getContractEvents({
+        address: checkoutAddress,
+        abi: aevifyCheckoutAbi,
+        eventName: "PaymentPaid",
+        args: { paymentId },
+        fromBlock: start,
+        toBlock: end,
+      });
+      if (logs[0]) return logs[0].transactionHash;
+    }
+    return null;
   } catch {
     return null;
   }

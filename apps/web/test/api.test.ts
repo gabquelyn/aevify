@@ -644,6 +644,7 @@ const { checkEmbed, normalizeOrigin } = await import("@/lib/embed");
 const { proxy } = await import("@/proxy");
 const { NextRequest } = await import("next/server");
 const { findMerchantById } = await import("@/lib/merchants");
+const embedCheckRoute = await import("@/app/api/v1/checkout/[id]/embed/route");
 
 describe("publishable key roles: embedding the checkout", () => {
   async function setup() {
@@ -681,6 +682,23 @@ describe("publishable key roles: embedding the checkout", () => {
     const otherKeys = await json(keysRoute.GET(jsonRequest("/x")));
     const otherPk = otherKeys.body.data.find((k: { kind: string }) => k.kind === "publishable").key as string;
     expect(await checkEmbed(merchant, otherPk, "http://localhost:4000")).toMatchObject({ ok: false, reason: "invalid_publishable_key" });
+  });
+
+  it("tells @aevify/react up front whether a site may embed the checkout (public, CORS)", async () => {
+    const { payment, pk } = await setup();
+    const check = async (query: string, id = payment.id) => {
+      const res = await embedCheckRoute.GET(new Request(`http://localhost:3000/api/v1/checkout/${id}/embed?${query}`), { params: Promise.resolve({ id }) });
+      return { status: res.status, cors: res.headers.get("access-control-allow-origin"), body: await res.json() };
+    };
+    const blocked = await check(`pk=${pk}&origin=${encodeURIComponent("https://shop.example.com")}`);
+    expect(blocked.cors).toBe("*");
+    expect(blocked.body).toMatchObject({ ok: false, reason: "origin_not_allowed" });
+    expect(blocked.body.message).toContain("https://shop.example.com isn't in");
+    expect(blocked.body.message).toContain("Allowed domains");
+    await patchOrigins(["https://shop.example.com"]);
+    expect((await check(`pk=${pk}&origin=${encodeURIComponent("https://shop.example.com")}`)).body).toEqual({ ok: true, origin: "https://shop.example.com" });
+    expect((await check(`pk=pk_test_wrong&origin=${encodeURIComponent("https://shop.example.com")}`)).body).toMatchObject({ ok: false, reason: "invalid_publishable_key" });
+    expect((await check(`pk=${pk}`, "pay_doesnotexist000000000000")).status).toBe(404);
   });
 
   it("sends frame-ancestors: none everywhere, allowed domains for embedded checkout", async () => {

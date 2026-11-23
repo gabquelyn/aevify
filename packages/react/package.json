@@ -1,6 +1,6 @@
 {
   "name": "@aevify/react",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Aevify Pay button and checkout modal for React: accept stablecoin payments on QDay Aevum.",
   "license": "MIT",
   "type": "module",
