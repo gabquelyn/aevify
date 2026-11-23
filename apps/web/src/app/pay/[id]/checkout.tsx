@@ -8,13 +8,22 @@ import {
   connect,
   discoverWallets,
   ensureChain,
+  erc20ErrorsAbi,
   friendlyError,
   isMobileBrowser,
+  isRpcHiccup,
   metamaskDeepLink,
+  ReceiptTimeoutError,
   shortAddress,
+  waitForReceipt,
+  waitUntil,
   walletClients,
   type WalletInfo,
 } from "@/lib/client/wallet";
+
+/** The checkout contract's ABI plus the token's errors, so reverts from inside pay() decode. */
+const payAbi = [...aevifyCheckoutAbi, ...erc20ErrorsAbi] as const;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 import type { CheckoutData } from "@/lib/payments";
 
 /**
@@ -240,22 +249,46 @@ export function Checkout({ initial, embed, parentOrigin = null }: { initial: Che
           });
           const approveHash = await walletClient.writeContract(approveTx);
           setPhase({ kind: "working", label: "Waiting for the approval to confirm…", step: "1 of 2" });
-          await publicClient.waitForTransactionReceipt({ hash: approveHash });
+          const approval = await waitForReceipt(publicClient, approveHash);
+          if (approval !== "done" && approval.status !== "success") throw new Error("The approval didn't go through. You haven't been charged.");
+          // Some RPC nodes lag a block behind: make sure the approval is visible before paying.
+          await waitUntil(async () => (await readBalances(wallet)).allowance >= amount, 30_000);
         }
         setPhase({ kind: "working", label: `Confirm the payment of ${data.amount} ${token.symbol}`, step: "2 of 2" });
-        const { request: payTx } = await publicClient.simulateContract({
-          account: wallet.account,
-          address: contractCall.address,
-          abi: aevifyCheckoutAbi,
-          functionName: "pay",
-          args: [request, signature],
-        });
+        let payTx;
+        for (let attempt = 0; ; attempt++) {
+          try {
+            ({ request: payTx } = await publicClient.simulateContract({
+              account: wallet.account,
+              address: contractCall.address,
+              abi: payAbi,
+              functionName: "pay",
+              args: [request, signature],
+            }));
+            break;
+          } catch (e) {
+            // A lagging node or a flaky RPC: wait a moment and check again. Real reverts are final.
+            const transient = isRpcHiccup(e) || /ERC20InsufficientAllowance/.test(String((e as Error)?.message));
+            if (!transient || attempt >= 4) throw e;
+            await sleep(2000);
+          }
+        }
         hash = await walletClient.writeContract(payTx);
       }
 
+      // Submitted. From here on, RPC hiccups must never show as a failed payment.
       setPhase({ kind: "confirming", txHash: hash });
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
-      if (receipt.status !== "success") throw new Error("The payment transaction failed. You haven't been charged.");
+      let receipt: Awaited<ReturnType<typeof waitForReceipt>>;
+      try {
+        receipt = await waitForReceipt(publicClient, hash, { isDone: async () => (await refresh())?.status === "paid" });
+      } catch (e) {
+        if (e instanceof ReceiptTimeoutError) {
+          keepConfirming(hash);
+          return;
+        }
+        throw e;
+      }
+      if (receipt !== "done" && receipt.status !== "success") throw new Error("The payment transaction failed. You haven't been charged.");
 
       // Let Aevify catch up (it reads the contract), but don't keep the customer waiting long.
       for (let i = 0; i < 8; i++) {
@@ -266,10 +299,27 @@ export function Checkout({ initial, embed, parentOrigin = null }: { initial: Che
       setPhase({ kind: "success", txHash: hash });
       postToParent(parentOrigin, "payment.paid", { paymentId: data.id, txHash: hash });
     } catch (e) {
+      // The wallet often hides the real reason behind "Internal JSON-RPC error"; keep it for debugging.
+      console.error("[aevify checkout] payment failed:", e);
       setError(friendlyError(e));
       setPhase({ kind: "idle" });
       if (wallet) void readBalances(wallet).catch(() => undefined);
     }
+  }
+
+  /** The network is slow to confirm: keep checking with Aevify in the background. */
+  function keepConfirming(hash: Hex) {
+    void (async () => {
+      for (;;) {
+        await sleep(4000);
+        const next = await refresh().catch(() => null);
+        if (next?.status === "paid") {
+          setPhase({ kind: "success", txHash: hash });
+          postToParent(parentOrigin, "payment.paid", { paymentId: data.id, txHash: hash });
+          return;
+        }
+      }
+    })();
   }
 
   function cancel() {

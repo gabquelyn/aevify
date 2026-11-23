@@ -7,11 +7,16 @@ import {
   createWalletClient,
   custom,
   defineChain,
+  fallback,
+  http,
   getAddress,
   numberToHex,
   type Address,
   type Chain,
   type EIP1193Provider,
+  type Hash,
+  type PublicClient,
+  type TransactionReceipt,
 } from "viem";
 
 /**
@@ -114,12 +119,92 @@ export async function ensureChain(provider: EIP1193Provider, chain: PublicChain)
 /** viem clients that talk through the wallet (no separate RPC, so no CORS issues). */
 export function walletClients(provider: EIP1193Provider, chain: PublicChain, account: Address) {
   const viemChain = toViemChain(chain);
-  const transport = custom(provider);
+  const walletTransport = custom(provider);
+  // Reads go to the public RPC first and fall back to the wallet's own connection, so one
+  // flaky path doesn't break checkout. Signing and sending always go through the wallet.
+  const readTransport = chain.rpcUrl
+    ? fallback([http(chain.rpcUrl, { timeout: 10_000, retryCount: 1 }), walletTransport])
+    : walletTransport;
   return {
-    publicClient: createPublicClient({ chain: viemChain, transport }),
-    walletClient: createWalletClient({ account, chain: viemChain, transport }),
+    publicClient: createPublicClient({ chain: viemChain, transport: readTransport }) as PublicClient,
+    walletClient: createWalletClient({ account, chain: viemChain, transport: walletTransport }),
   };
 }
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Wait for a transaction's receipt, shrugging off RPC hiccups ("Internal JSON-RPC error",
+ * rate limits, a node that hasn't seen the transaction yet). Unlike viem's
+ * waitForTransactionReceipt, one failed status check doesn't fail the whole wait.
+ * `isDone` can end the wait early (e.g. Aevify already reports the payment as paid).
+ */
+export async function waitForReceipt(
+  client: PublicClient,
+  hash: Hash,
+  options: { timeoutMs?: number; intervalMs?: number; isDone?: () => Promise<boolean> } = {},
+): Promise<TransactionReceipt | "done"> {
+  const deadline = Date.now() + (options.timeoutMs ?? 180_000);
+  for (let i = 0; ; i++) {
+    try {
+      const receipt = await client.getTransactionReceipt({ hash });
+      if (receipt) return receipt;
+    } catch {
+      /* not mined yet, or the RPC stumbled: try again */
+    }
+    if (options.isDone && i % 2 === 1) {
+      try {
+        if (await options.isDone()) return "done";
+      } catch {
+        /* ignore */
+      }
+    }
+    if (Date.now() > deadline) throw new ReceiptTimeoutError(hash);
+    await sleep(options.intervalMs ?? 1500);
+  }
+}
+
+export class ReceiptTimeoutError extends Error {
+  constructor(public hash: Hash) {
+    super("The network is taking longer than usual to confirm the transaction.");
+  }
+}
+
+/** Poll until `check` returns true (or time runs out), ignoring errors in between. */
+export async function waitUntil(check: () => Promise<boolean>, timeoutMs = 20_000, intervalMs = 1500): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      if (await check()) return true;
+    } catch {
+      /* ignore and retry */
+    }
+    if (Date.now() > deadline) return false;
+    await sleep(intervalMs);
+  }
+}
+
+/** OpenZeppelin ERC-20 errors, so a revert from the token (inside pay) decodes to a name. */
+export const erc20ErrorsAbi = [
+  {
+    type: "error",
+    name: "ERC20InsufficientAllowance",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "allowance", type: "uint256" },
+      { name: "needed", type: "uint256" },
+    ],
+  },
+  {
+    type: "error",
+    name: "ERC20InsufficientBalance",
+    inputs: [
+      { name: "sender", type: "address" },
+      { name: "balance", type: "uint256" },
+      { name: "needed", type: "uint256" },
+    ],
+  },
+] as const;
 
 const CONTRACT_ERRORS: Record<string, string> = {
   RequestExpired: "This payment request has expired. Ask the store for a new one.",
@@ -134,7 +219,7 @@ const CONTRACT_ERRORS: Record<string, string> = {
   NoPendingPayoutChange: "There's no pending payout change.",
   PayoutChangeNotReady: "The payout change isn't ready yet.",
   ERC20InsufficientBalance: "Not enough tUSD8 in this wallet.",
-  ERC20InsufficientAllowance: "The token approval is too low. Please approve again.",
+  ERC20InsufficientAllowance: "The approval hasn't reached the network yet. Please try again in a moment.",
 };
 
 /** A short, human sentence for any wallet, network or contract error. */
@@ -155,10 +240,24 @@ export function friendlyError(error: unknown): string {
     }
     const text = `${error.shortMessage} ${error.details ?? ""}`;
     if (/insufficient funds/i.test(text)) return "Not enough tQDAY in this wallet to pay the network fee (gas).";
+    if (/nonce too low|replacement transaction underpriced|already known/i.test(text)) {
+      return "Your wallet has a transaction still pending. Wait a moment, then try again.";
+    }
+    if (isRpcHiccup(error)) return "The network didn't respond properly. Please try again; you haven't been charged.";
     return error.shortMessage;
   }
   if (error instanceof Error) return error.message;
   return "Something went wrong. Please try again.";
+}
+
+/** "Internal JSON-RPC error" and friends: the RPC failed, not the payment. */
+export function isRpcHiccup(error: unknown): boolean {
+  const e = error as { code?: number; message?: string; details?: string; shortMessage?: string; walk?: (fn: (e: unknown) => boolean) => unknown };
+  if (e?.code === -32603 || e?.code === -32005 || e?.code === 429) return true;
+  if (typeof e?.walk === "function" && e.walk((x) => [-32603, -32005, 429].includes((x as { code?: number }).code ?? 0))) return true;
+  return /internal json-rpc error|rate limit|too many requests|timed? ?out|fetch failed|failed to fetch/i.test(
+    `${e?.shortMessage ?? ""} ${e?.message ?? ""} ${e?.details ?? ""}`,
+  );
 }
 
 export function shortAddress(address: string): string {
