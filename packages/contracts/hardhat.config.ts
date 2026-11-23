@@ -8,23 +8,34 @@ import { configVariable, defineConfig } from "hardhat/config";
  * environment variables or the encrypted Hardhat keystore, never from this file.
  * See DEPLOY.md.
  */
+/**
+ * "paris" avoids newer opcodes. Aevum supports PUSH0 (Shanghai) but not MCOPY (Cancun);
+ * see DEPLOY.md step 6 for how to check.
+ */
+function compilerProfile() {
+  return {
+    version: "0.8.28",
+    // Optional: point at a local solc (e.g. soljson.js from the `solc` npm package)
+    // when binaries.soliditylang.org is unreachable. Leave unset to download normally.
+    path: process.env.SOLC_PATH || undefined,
+    settings: {
+      optimizer: { enabled: true, runs: 200 },
+      evmVersion: "paris",
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [hardhatToolboxViemPlugin],
 
   solidity: {
+    // Both profiles must be listed. Deployments (`ignition deploy`) build with "production",
+    // and when it isn't defined Hardhat copies only the compiler version from "default",
+    // silently dropping evmVersion, which then defaults to Cancun (MCOPY), and Aevum rejects that.
+    // `npm run check:evm` guards against this.
     profiles: {
-      default: {
-        version: "0.8.28",
-        // Optional: point at a local solc (e.g. soljson.js from the `solc` npm package)
-        // when binaries.soliditylang.org is unreachable. Leave unset to download normally.
-        path: process.env.SOLC_PATH || undefined,
-        settings: {
-          optimizer: { enabled: true, runs: 200 },
-          // "paris" avoids newer opcodes (PUSH0, MCOPY) in case Aevum doesn't support them.
-          // See DEPLOY.md for how to check and raise this.
-          evmVersion: "paris",
-        },
-      },
+      default: compilerProfile(),
+      production: compilerProfile(),
     },
   },
 

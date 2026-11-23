@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | **Live app** | https://aevify.vercel.app (docs at [aevify.vercel.app/docs](https://aevify.vercel.app/docs)) |
-| **Checkout contract** | [`0xdAC5989DFb977C07a614E7Ed3aA806B445896Ae3`](https://explorer-test.qday.info/address/0xdAC5989DFb977C07a614E7Ed3aA806B445896Ae3) on Aevum Testnet (chain ID 44005) |
+| **Checkout contract** | [`0x411eB280F9ED93feAC1752E30331b4B8fAFC40e8`](https://explorer-test.qday.info/address/0x411eB280F9ED93feAC1752E30331b4B8fAFC40e8) on Aevum Testnet (chain ID 44005) |
 | **Stablecoin** | tUSD8 [`0x4565…3483`](https://explorer-test.qday.info/address/0x456569838f1d43009A91ebA4263147Afd7233483) |
 | **Demo store** | [Admit](https://github.com/YOUR_GITHUB_USER/aevify-demo-store) (`aevify-demo-store`): an event ticket platform paid by people and an AI agent, built only on the npm packages |
 | **npm packages** | [`@aevify/node`](https://www.npmjs.com/package/@aevify/node) (server SDK), [`@aevify/react`](https://www.npmjs.com/package/@aevify/react) (Pay button and modal) |

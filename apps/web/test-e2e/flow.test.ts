@@ -9,7 +9,8 @@
  *   docker compose run --rm -w /app/apps/web -e E2E_RPC_URL=http://chain:8545 contracts npm run test:e2e
  */
 import { aevumChain } from "@aevify/shared";
-import { createPublicClient, createWalletClient, erc20Abi, http, parseUnits, type Address, type Hex } from "viem";
+import { readFileSync } from "node:fs";
+import { createPublicClient, createWalletClient, erc20Abi, http, parseUnits, type Abi, type Address, type Hex } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { aevifyCheckoutAbi } from "@aevify/shared";
@@ -183,6 +184,32 @@ describe.skipIf(!RPC)("end to end on a local chain", () => {
     await expect(payFromCheckout(created.body.id, accounts.customer)).rejects.toThrow(/RequestExpired/);
   });
 
+  it("after the contract is redeployed, merchants are registered again automatically", async () => {
+    // Deploy a second checkout contract (as a redeploy would) and point the app at it.
+    const artifact = JSON.parse(
+      readFileSync(new URL("../../../packages/contracts/artifacts/contracts/AevifyCheckout.sol/AevifyCheckout.json", import.meta.url), "utf8"),
+    ) as { abi: Abi; bytecode: Hex };
+    const deployer = walletFor(accounts.deployer);
+    const d = accounts.deployer.address;
+    const deployHash = await deployer.deployContract({ abi: artifact.abi, bytecode: artifact.bytecode, args: [token, d, d, d, d, 300] });
+    const newCheckout = (await publicClient.waitForTransactionReceipt({ hash: deployHash })).contractAddress!;
+    process.env.AEVIFY_CHECKOUT_ADDRESS = newCheckout;
+
+    const merchant = await json(routes.merchant.GET(jsonRequest("/x")));
+    const merchantId = merchant.body.merchant.onchain.merchantId as Hex;
+    const onChain = await publicClient.readContract({ address: newCheckout, abi: aevifyCheckoutAbi, functionName: "getMerchant", args: [merchantId] });
+    expect(onChain.payout).toBe(accounts.payout.address); // the verified payout wallet, carried over
+    expect(merchant.body.merchant.onchain.status).toBe("registered");
+
+    // And it takes payments on the new contract.
+    const created = await create({ amount: "2.00", orderId: "after-redeploy" });
+    expect(created.status).toBe(201);
+    const { receipt } = await payFromCheckout(created.body.id, accounts.customer);
+    expect(receipt.status).toBe("success");
+    expect(receipt.to?.toLowerCase()).toBe(newCheckout.toLowerCase());
+    expect((await get(created.body.id)).body.status).toBe("paid");
+  });
+
   it("changes the payout wallet only after 24 hours", async () => {
     const res = await connect(accounts.newPayout);
     expect(res.body.merchant.onchain).toMatchObject({ payoutAddress: accounts.payout.address, pendingPayoutAddress: accounts.newPayout.address });
@@ -194,4 +221,5 @@ describe.skipIf(!RPC)("end to end on a local chain", () => {
     expect(applied.status).toBe(200);
     expect(applied.body.merchant.onchain).toMatchObject({ payoutAddress: accounts.newPayout.address, pendingPayoutAddress: null });
   });
+
 });

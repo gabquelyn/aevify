@@ -1,6 +1,6 @@
 import { merchantIdFromSlug } from "@aevify/shared";
 import type { Address, Hex } from "viem";
-import { isChainConfigured, readMerchantOnChain } from "./chain";
+import { isChainConfigured, readMerchantOnChain, registerMerchantOnChain } from "./chain";
 import { COLLECTIONS, getDb } from "./db";
 import { newId, newSecret, randomBase62, slugify } from "./ids";
 
@@ -104,6 +104,11 @@ export async function syncMerchantFromChain(doc: MerchantDoc): Promise<MerchantD
   if (!isChainConfigured() || doc.onchainStatus === "not_registered") return doc;
   try {
     const onChain = await readMerchantOnChain(doc.onchainMerchantId);
+    if (!onChain.payout && doc.onchainStatus === "registered" && doc.payoutAddress) {
+      // Registered with an earlier deployment of the contract (e.g. after a redeploy):
+      // register again here. The payout wallet was already proven by signature.
+      return await reregister(doc);
+    }
     const next = {
       onchainStatus: onChain.payout ? ("registered" as const) : doc.onchainStatus,
       payoutAddress: onChain.payout ?? doc.payoutAddress,
@@ -121,6 +126,34 @@ export async function syncMerchantFromChain(doc: MerchantDoc): Promise<MerchantD
     console.warn("[merchants] Couldn't sync from chain:", error);
     return doc;
   }
+}
+
+const reregistering = new Map<string, Promise<MerchantDoc>>();
+
+/** Register an already-verified merchant on the current contract (once at a time per merchant). */
+function reregister(doc: MerchantDoc): Promise<MerchantDoc> {
+  const running = reregistering.get(doc._id);
+  if (running) return running;
+  const task = (async () => {
+    console.info(`[merchants] ${doc.slug} isn't on the current checkout contract; registering it again.`);
+    try {
+      const tx = await registerMerchantOnChain(doc.onchainMerchantId, doc.payoutAddress as Address);
+      const updated = await updateMerchant(doc._id, {
+        onchainStatus: tx.confirmed ? "registered" : "pending",
+        pendingPayoutAddress: null,
+        pendingPayoutEffectiveAt: null,
+      });
+      return updated ?? doc;
+    } catch (error) {
+      // Someone else (another server instance) may have registered it first: re-read.
+      const onChain = await readMerchantOnChain(doc.onchainMerchantId).catch(() => null);
+      if (onChain?.payout) return (await updateMerchant(doc._id, { onchainStatus: "registered", payoutAddress: onChain.payout })) ?? doc;
+      console.warn(`[merchants] Couldn't register ${doc.slug} on the current contract:`, error);
+      return doc;
+    }
+  })().finally(() => reregistering.delete(doc._id));
+  reregistering.set(doc._id, task);
+  return task;
 }
 
 /** Merchant as returned to its own (signed-in) owner. */

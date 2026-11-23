@@ -31,6 +31,9 @@ jobs:
       - name: Tests (contracts + web API)
         run: docker compose run --rm -T -w /app contracts npm test
 
+      - name: Deployable bytecode has no opcodes Aevum rejects (production profile)
+        run: docker compose run --rm -T contracts npm run check:evm
+
       - name: End-to-end (real contract on a local chain + the API)
         run: |
           docker compose up -d chain

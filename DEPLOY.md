@@ -174,6 +174,15 @@ These are public addresses, not secrets, so the file is safe to commit.
 
 ## 8. Deploy and verify
 
+First confirm the contract that will be deployed has no opcodes Aevum rejects. Deployments
+build with Hardhat's `production` profile, so this builds and checks exactly that:
+
+```bash
+docker compose run --rm contracts npm run check:evm     # expect: ✓ AevifyCheckout: no Cancun opcodes
+```
+
+Then deploy:
+
 ```bash
 docker compose run --rm contracts npm run deploy:aevum -- --parameters ignition/parameters/aevum.json
 # make deploy
@@ -330,7 +339,14 @@ The hosted checkout page (`checkoutUrl`) comes next. Until then, the response an
    # make deploy ARGS="--deployment-id aevum-v2"
    ```
 
-5. Update `AEVIFY_CHECKOUT_ADDRESS` and register merchants again on the new contract.
+5. `docker compose run --rm contracts npm run check:evm` before deploying.
+6. Update `AEVIFY_CHECKOUT_ADDRESS` (Vercel, the listener, your `.env`) and set the listener's
+   `LISTENER_START_BLOCK` to the new deployment block.
+
+Merchants don't need to do anything: the first time the app sees a merchant who is verified in
+the database but unknown to the new contract, the operator registers them again with their
+already-verified payout wallet. Payments created on the old contract can't be paid on the new
+one; they simply expire.
 
 ---
 

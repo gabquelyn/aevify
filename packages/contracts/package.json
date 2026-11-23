@@ -17,7 +17,8 @@
     "smoke-pay": "hardhat run scripts/smoke-pay.ts",
     "export-abi": "hardhat run scripts/export-abi.ts",
     "clean": "hardhat clean",
-    "admin": "hardhat run scripts/admin.ts"
+    "admin": "hardhat run scripts/admin.ts",
+    "check:evm": "hardhat build --build-profile production --force --quiet && node scripts/check-evm.mjs"
   },
   "dependencies": {
     "@aevify/shared": "*",
